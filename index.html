@@ -4365,7 +4365,8 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
     const fm=(g.mechanics||[]).find(m=>SMECHS.some(s=>m.toLowerCase().includes(s.toLowerCase())));
     if(fm)tags.push(fm.length>18?fm.slice(0,16)+'…':fm);
     const STHEMES=['Horror','Crime','Dark','Chaos','Anime','Music','Mythology','Adventure'];
-    const ft=(g.themes||[]).find(t=>STHEMES.some(s=>t.toLowerCase().includes(s.toLowerCase())));
+    const ftIdx=(g.themes_raw||g.themes||[]).findIndex(t=>STHEMES.some(s=>t.toLowerCase().includes(s.toLowerCase())));
+    const ft=ftIdx>=0?(g.themes||g.themes_raw)[ftIdx]:null;
     if(ft)tags.push(ft+' 題材');
     if(!BIG_PROVIDERS.has(g.provider)&&provCounts[g.provider]<30&&(g.cgscore>=78||(bwbN&&bwbN>=65)))tags.push('中小廠高潛力');
     if(isSeriesCandidate(g.name))tags.push('系列候選');
@@ -4682,7 +4683,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
       if(serOnly&&!isSeriesCandidate(g.name))return false;
       if(exclBig&&BIG_PROVIDERS.has(g.provider))return false;
       if(recent3&&(g.year||0)<2024)return false;
-      if(q){const h=[g.name,g.provider,g.ecosystem,...(g.mechanics||[]),...(g.themes||[])].join(' ').toLowerCase();if(!h.includes(q))return false;}
+      if(q){const h=[g.name,g.provider,g.ecosystem,...(g.mechanics||[]),...(g.themes||[]),...(g.themes_raw||[])].join(' ').toLowerCase();if(!h.includes(q))return false;}
       return true;
     });
 
@@ -5344,7 +5345,11 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
     if(yr&&RECENT_YEARS.includes(yr)) r.recent++;
     if(g.score!=null) r.scores.push(g.score);
     (g.mechanics||[]).forEach(m=>{r.mechSet.add(m);if(SIG_MECHS.some(kw=>m.includes(kw)))r.sigMechs.add(m);});
-    (g.themes||[]).forEach(t=>{r.themeSet.add(t);if(SIG_THEMES.some(kw=>t.toLowerCase().includes(kw.toLowerCase())))r.sigThemes.add(t);});
+    (g.themes||[]).forEach((t,i)=>{
+      r.themeSet.add(t);
+      const raw=(g.themes_raw||g.themes||[])[i]||t;
+      if(SIG_THEMES.some(kw=>raw.toLowerCase().includes(kw.toLowerCase())))r.sigThemes.add(t);
+    });
   });
 
   // ── Sample confidence: 1→低(0) 2→低(.5) 3-4→中低(.7) 5-9→中(.85) 10+→高(1)
@@ -6504,7 +6509,7 @@ function formatMechanicsForPrompt(game){
   }
   function condMatch(game,item){
     if(item.special)return specialMatch(game,item.special);
-    if(item.themeTags)return themeMatch(game.themes,item.themeTags);
+    if(item.themeTags)return themeMatch(game.themes_raw||game.themes,item.themeTags);
     return mechMatch(game,item);
   }
 
