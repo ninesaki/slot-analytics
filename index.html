@@ -2106,7 +2106,7 @@ function scoreTag(g){
 
   const sortSel=document.createElement('select');
   sortSel.style.cssText='background:var(--sf);color:var(--tx);border:1px solid var(--bd);padding:5px 8px;font-family:inherit;font-size:12px;cursor:pointer;margin-bottom:10px;display:block';
-  [['name','排序：名稱'],['count','排序：遊戲數'],['recent','排序：近三年'],['sig','排序：差異化程度'],['cgn','排序：CGN 吸引力'],['sc','排序：SC 市場曝光']].forEach(([v,l])=>{
+  [['name','排序：名稱'],['count','排序：遊戲數'],['recent','排序：近三年'],['sig','排序：差異化程度'],['cgn','排序：CGN 吸引力'],['sc','排序：SC 玩家評分']].forEach(([v,l])=>{
     const o=mk('option');o.value=v;o.textContent=l;sortSel.appendChild(o);
   });
   sortSel.onchange=rebuildSel;
@@ -2250,7 +2250,7 @@ function scoreTag(g){
     }
     scCard.innerHTML=`<div class="ct">評分來源拆解</div>
       ${sBlock('CGN 商業吸引力',p.avg_cgscore!=null?p.avg_cgscore.toFixed(1):'—','偏向熱門度、RTP、Big Win potential，非純玩家評分。',p.avg_cgscore!=null?'var(--am)':'var(--txd)')}
-      ${sBlock('SlotCatalog 市場曝光',p.avg_sc!=null?p.avg_sc.toFixed(1):'—','偏向市場曝光、Casino lobby 能見度，非遊戲品質指標。',p.avg_sc!=null?'var(--bl)':'var(--txd)')}
+      ${sBlock('SlotCatalog 玩家評分',p.avg_sc!=null?p.avg_sc.toFixed(1):'—','訪客自行投票的平均分數，樣本數普遍很小，與其他來源相關性低，非遊戲品質指標。',p.avg_sc!=null?'var(--bl)':'var(--txd)')}
       <div style="padding:10px 0">
         <div style="font-size:12px;font-weight:700;color:var(--txm);margin-bottom:3px">Bigwinboard 專業評價</div>
         <div style="font-size:12px;color:var(--txd);font-style:italic">目前此廠商尚無 Bigwinboard 平均資料。</div>
@@ -3810,7 +3810,7 @@ renderOverview();
 
   // Main HTML shell
   s.innerHTML=`
-    <div class="sh"><div class="st">評分來源解剖</div><div class="ss">比較 CGN、SlotCatalog、Bigwinboard 三種來源的評分差異，找出市場曝光、專業評價與資料缺口之間的落差。</div></div>
+    <div class="sh"><div class="st">評分來源解剖</div><div class="ss">比較 CGN、SlotCatalog、Bigwinboard 三種來源的評分差異，找出玩家投票、專業評價與資料缺口之間的落差。</div></div>
     <div class="sa-notice">評分分歧是研究線索，不是品質結論。CGN、SlotCatalog、BWB 的評分標準不同，不應直接平均成單一分數。</div>
     <div class="sa-tabs" id="sa-tabs"></div>
     <div id="sa-body"></div>`;
@@ -3878,8 +3878,8 @@ ${cfg.hl?`<div class="sa-src-hl">${cfg.hl.map(h=>`<div class="sa-src-hl-item"><s
     }));
 
     grid.appendChild(srcCard({
-      color:'var(--bl)',title:'📡 SlotCatalog 市場曝光',
-      note:'偏向 casino lobby 能見度與市場曝光，不等於遊戲品質。大廠可能因鋪貨能力、平台位置與市場權重取得優勢。',
+      color:'var(--bl)',title:'⭐ SlotCatalog 玩家評分',
+      note:'網站訪客自行投票的平均分數，樣本數普遍很小（中位數僅1票），與 CGN/BWB 幾乎無相關性（相關係數0.02-0.07），也不受廠商規模影響，不等於遊戲品質。',
       stats:[
         {label:'有資料遊戲數',val:srcStats.sc.count.toLocaleString()},
         {label:'缺資料',val:srcStats.sc.missing.toLocaleString()},
@@ -3889,7 +3889,7 @@ ${cfg.hl?`<div class="sa-src-hl">${cfg.hl.map(h=>`<div class="sa-src-hl-item"><s
         {label:'SC低但CGN高（< 70 & ≥ 80）',val:srcStats.sc.lowScHighCgn+'款'},
       ],
       hl:[
-        srcStats.sc.max?{label:'最高曝光',name:srcStats.sc.max.name||'—',score:fmtN(srcStats.sc.max.sc100),col:'var(--bl)'}:null,
+        srcStats.sc.max?{label:'最高分',name:srcStats.sc.max.name||'—',score:fmtN(srcStats.sc.max.sc100),col:'var(--bl)'}:null,
       ].filter(Boolean),
     }));
 
@@ -3925,13 +3925,13 @@ ${cfg.hl?`<div class="sa-src-hl">${cfg.hl.map(h=>`<div class="sa-src-hl-item"><s
 
     const groups=[
       {type:'all_high',color:'var(--gn)',label:'三方一致高',
-        desc:'市場曝光、數值吸引力與專業 / 社群評價都表現不錯，可作為標竿案例。',
+        desc:'玩家投票、數值吸引力與專業 / 社群評價都表現不錯，可作為標竿案例。',
         games:enriched.filter(g=>g.divType==='all_high').sort((a,b)=>(b.cgn100||0)+(b.sc100||0)+(b.bwb100||0)-((a.cgn100||0)+(a.sc100||0)+(a.bwb100||0)))},
-      {type:'high_exposure',color:'var(--bl)',label:'高曝光但待驗證',
-        desc:'市場曝光高，但 BWB 評價普通或缺少 BWB 交叉驗證。這不代表遊戲品質低，而是適合人工確認平台曝光與實際玩法表現是否一致。',
+      {type:'high_exposure',color:'var(--bl)',label:'SC評分高但待驗證',
+        desc:'SlotCatalog 玩家評分高，但 BWB 評價普通或缺少 BWB 交叉驗證。SC 是訪客自行投票、樣本數普遍很小（中位數僅1票），這種落差多半只是投票樣本雜訊，建議以 BWB／CGN 的判斷為準，不代表這款遊戲品質特別突出。',
         games:enriched.filter(g=>g.divType==='high_exposure').sort((a,b)=>(b.sc100||0)-(a.sc100||0))},
       {type:'niche_high',color:'var(--vi)',label:'小眾高評價',
-        desc:'BWB 評價高但市場曝光較低，可能是小眾佳作、題材特殊或廠商鋪貨不足。',
+        desc:'BWB 評價高但 SlotCatalog 玩家評分較低，可能是小眾佳作、題材特殊，也可能只是投票樣本太少沒被注意到。',
         games:enriched.filter(g=>g.divType==='niche_high').sort((a,b)=>(b.bwb100||0)-(a.bwb100||0))},
       {type:'cgn_inconsistent',color:'var(--am)',label:'CGN高但評價不一致',
         desc:'CGN 數值吸引力高，但其他來源未同步支持。可能是數值條件或熱門度高，但實際體驗仍需人工確認。',
@@ -4002,8 +4002,8 @@ ${cfg.hl?`<div class="sa-src-hl">${cfg.hl.map(h=>`<div class="sa-src-hl-item"><s
     const bwbMissing=g.bwb100==null;
     function note(){
       if(dt==='all_high')return'三方一致高，可作為標竿案例。';
-      if(dt==='high_exposure')return'市場曝光高，但 BWB 評價普通或缺少 BWB 交叉驗證。這不代表遊戲品質低，建議人工確認平台曝光與實際玩法表現是否一致。';
-      if(dt==='niche_high')return'BWB 高但曝光低，可能是小眾佳作，值得看玩法 / 美術亮點。';
+      if(dt==='high_exposure')return'SlotCatalog 玩家評分高，但 BWB 評價普通或缺少交叉驗證。SC 是訪客自行投票、樣本數普遍很小，這種落差多半是投票樣本雜訊，建議以 BWB／CGN 為準，不代表這款遊戲品質特別突出。';
+      if(dt==='niche_high')return'BWB 高但 SC 評分低，可能是小眾佳作，值得看玩法 / 美術亮點，也可能只是 SC 投票樣本太少。';
       if(dt==='cgn_inconsistent')return'CGN 數值高但其他來源未跟進，建議人工確認遊戲體驗品質。';
       if(dt==='large_gap')return'分數差異大（'+Math.round(gap||0)+' 點），建議人工研究各來源分歧原因。';
       return'分數資料不足，建議先補齊來源後再分析。';
@@ -4019,7 +4019,7 @@ ${cfg.hl?`<div class="sa-src-hl">${cfg.hl.map(h=>`<div class="sa-src-hl-item"><s
 <div class="sa-detail-section-title">來源分數</div>
 <div class="sa-detail-scores">
 <div class="sa-detail-score"><span style="color:var(--am)">CGN 數值吸引力</span><span class="sa-score-num" style="color:var(--am)">${cgnF}</span></div>
-<div class="sa-detail-score"><span style="color:var(--bl)">SlotCatalog 市場曝光</span><span class="sa-score-num" style="color:var(--bl)">${scF}</span></div>
+<div class="sa-detail-score"><span style="color:var(--bl)">SlotCatalog 玩家評分</span><span class="sa-score-num" style="color:var(--bl)">${scF}</span></div>
 <div class="sa-detail-score"><span style="color:var(--gn)">BWB 專業 / 社群評價</span><span class="sa-score-num" style="color:var(--gn)">${bwbF}</span></div>
 </div>
 <div class="sa-detail-section-title">分歧判斷</div>
@@ -4042,7 +4042,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
   var div=${JSON.stringify(g.divLabel||'—')};
   var mechs=${JSON.stringify((g.mechanics||[]).join(', '))};
   var themes=${JSON.stringify((g.themes||[]).join(', '))};
-  var txt='請幫我分析以下 Slot 遊戲的評分分歧：\\n\\n遊戲名稱：'+name+'\\n遊戲商：'+prov+'\\n年份：'+yr+'\\n\\n分數來源：\\n- CGN 數值吸引力：'+cgn+'\\n- SlotCatalog 市場曝光：'+sc+'\\n- BWB 專業 / 社群評價：'+bwb+'\\n\\n分歧類型：'+div+'\\n主要機制：'+mechs+'\\n主要題材：'+themes+'\\n\\n請從以下角度分析：\\n1. 三個來源可能各自反映什麼\\n2. 市場曝光與專業評價是否一致\\n3. 是否可能受到大廠鋪貨、年份、題材小眾性或資料缺口影響\\n4. 這款遊戲是否值得加入人工研究\\n5. 美術 / FX / 企劃可以觀察哪些重點\\n\\n請用繁體中文輸出。';
+  var txt='請幫我分析以下 Slot 遊戲的評分分歧：\\n\\n遊戲名稱：'+name+'\\n遊戲商：'+prov+'\\n年份：'+yr+'\\n\\n分數來源：\\n- CGN 數值吸引力：'+cgn+'\\n- SlotCatalog 玩家評分（訪客投票，樣本數常很小）：'+sc+'\\n- BWB 專業 / 社群評價：'+bwb+'\\n\\n分歧類型：'+div+'\\n主要機制：'+mechs+'\\n主要題材：'+themes+'\\n\\n請從以下角度分析：\\n1. 三個來源可能各自反映什麼\\n2. SC 評分與專業評價是否一致，落差是否可能只是投票樣本太少造成的雜訊\\n3. 是否可能受到年份、題材小眾性或資料缺口影響\\n4. 這款遊戲是否值得加入人工研究\\n5. 美術 / FX / 企劃可以觀察哪些重點\\n\\n請用繁體中文輸出。';
   navigator.clipboard.writeText(txt).catch(function(){var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();});
   alert('已複製分析 Prompt！');
 })()">複製分析 Prompt</button>
@@ -4079,7 +4079,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
       {title:'CGN 數值吸引力 Top 10',color:'var(--am)',
         games:dedupProv(yG.filter(g=>g.cgn100!=null).sort((a,b)=>b.cgn100-a.cgn100),2),
         scFn:g=>fmtN(g.cgn100)},
-      {title:'SlotCatalog 市場曝光 Top 10',color:'var(--bl)',
+      {title:'SlotCatalog 玩家評分 Top 10',color:'var(--bl)',
         games:dedupProv(yG.filter(g=>g.sc100!=null).sort((a,b)=>b.sc100-a.sc100),2),
         scFn:g=>fmtN(g.sc100)},
       {title:'BWB 專業 / 社群評價 Top 10',color:'var(--gn)',bwbBoard:true,
@@ -4128,13 +4128,13 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
     body.appendChild(layout);
 
     const groups=[
-      {label:'高曝光低評價',color:'var(--bl)',
-        desc:'SlotCatalog 曝光 ≥ 85 但 BWB 評價 ≤ 65 或缺失。值得人工確認平台推廣與實際玩法的落差。',
-        reason:'高市場曝光，但專業 / 社群評價偏低，可能受大廠鋪貨影響。',
+      {label:'SC評分高但BWB評價低',color:'var(--bl)',
+        desc:'SlotCatalog 玩家評分 ≥ 85 但 BWB 評價 ≤ 65 或缺失。SC 是訪客自行投票、樣本數普遍很小（中位數僅1票），值得人工確認是否只是投票樣本雜訊。',
+        reason:'SC 評分高，但專業 / 社群評價偏低，SC 評分本身樣本量通常很小，落差多半是雜訊而非廠商鋪貨造成。',
         games:enriched.filter(g=>g.sc100!=null&&g.sc100>=85&&(g.bwb100==null||g.bwb100<=65)).sort((a,b)=>b.sc100-a.sc100)},
-      {label:'高 BWB 低曝光',color:'var(--gn)',
-        desc:'BWB 評價 ≥ 85 但 SlotCatalog 曝光 ≤ 65 或缺失。可能是小眾佳作，值得加入人工研究清單。',
-        reason:'BWB 評價優秀，但市場曝光不足，可能因廠商鋪貨受限或題材小眾。',
+      {label:'高 BWB 低 SC評分',color:'var(--gn)',
+        desc:'BWB 評價 ≥ 85 但 SlotCatalog 玩家評分 ≤ 65 或缺失。可能是小眾佳作，值得加入人工研究清單。',
+        reason:'BWB 評價優秀，但 SC 玩家評分偏低，可能是題材小眾，也可能只是 SC 投票樣本太少。',
         games:enriched.filter(g=>g.bwb100!=null&&g.bwb100>=85&&(g.sc100==null||g.sc100<=65)).sort((a,b)=>b.bwb100-a.bwb100)},
       {label:'高 CGN 但其他來源缺失',color:'var(--am)',
         desc:'CGN ≥ 85 但 SlotCatalog 或 BWB 缺資料，無法跨來源驗證。',
@@ -4435,7 +4435,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
     const SECS=[
       {title:'近期值得研究 Top 10',desc:'年份 2024 以上，至少有一個評分來源，以研究優先度排序。',data:recentTop,color:'var(--am)',valFn:function(g){return(g.year||'?')+''}},
       {title:'BWB 專業評價 Top 10',desc:'依 BWB 評價排序。適合找專業評測或社群反應較突出的遊戲。',data:bwbTop,color:'#e96f6f',valFn:function(g){return fmtSrc(g.bwb_rating);}},
-      {title:'高曝光但待驗證 Top 10',desc:'SlotCatalog 市場曝光高，但 BWB 評價低或缺失。市場曝光高不等於玩法品質高，可能受大廠鋪貨能力影響。',data:highExpTop,color:'var(--bl)',valFn:function(g){return fmtSrc(g.sc_rating)+' SC';}},
+      {title:'SC評分高但待驗證 Top 10',desc:'SlotCatalog 玩家評分高，但 BWB 評價低或缺失。SC 是訪客自行投票、樣本數普遍很小，評分高不代表玩法品質高，建議交叉核對 BWB。',data:highExpTop,color:'var(--bl)',valFn:function(g){return fmtSrc(g.sc_rating)+' SC';}},
       {title:'非大廠高潛力 Top 10',desc:'排除 100 款以上的大型廠商，年份 2023 以上，CGN 或 BWB 其中一項突出。適合找新興或中小型廠商的參考作品。同廠最多 1 款。',data:indieTop,color:'var(--gn)',valFn:function(g){return g.provider||'?';}},
       {title:'系列宇宙候選 Top 10',desc:'遊戲名稱包含系列關鍵字（Megaways / Deluxe / Revenge / 2、3、II 等），適合連到系列偵測頁觀察同系列演化。',data:seriesTop,color:'var(--vi)',valFn:function(g){const m=g.name.match(/\b(2|3|megaways|deluxe|revenge|respin|ii|iii)\b/i);return m?m[0]:'系列';}},
     ];
@@ -4477,7 +4477,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
       {title:'CGN 數值吸引力 Top 10',desc:'偏向網站自家演算法，可能包含熱門度、RTP、Big Win potential。',
        data:topNDiverse(yg.filter(function(g){return g.cgscore!=null;}).sort(function(a,b){return b.cgscore-a.cgscore;}),10),
        color:'var(--am)',valFn:function(g){return g.cgscore.toFixed(0);}},
-      {title:'SlotCatalog 市場曝光 Top 10',desc:'偏向 casino lobby 能見度與市場曝光，不等於遊戲品質。大廠可能因鋪貨能力佔優。',
+      {title:'SlotCatalog 玩家評分 Top 10',desc:'網站訪客自行投票的平均分數，樣本數普遍很小（中位數僅1票），不等於遊戲品質，也不受廠商規模影響。',
        data:topNDiverse(yg.filter(function(g){return g.sc_rating!=null;}).sort(function(a,b){return(fmtSrcNum(b.sc_rating)||0)-(fmtSrcNum(a.sc_rating)||0);}),10),
        color:'var(--bl)',valFn:function(g){return fmtSrc(g.sc_rating);}},
       {title:'BWB 評價 Top 10',desc:'偏向專業評測、玩家社群反應與站內互動趨勢。',
@@ -4520,8 +4520,8 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
        desc:'適合快速找高 CGN、自帶熱門度 / RTP / Big Win potential 條件的遊戲，但不是純玩家口碑。',
        data:topNDiverse(baseAll.filter(function(g){return g.cgscore!=null;}).sort(function(a,b){return b.cgscore-a.cgscore;}),10),
        valFn:function(g){return g.cgscore.toFixed(0);}},
-      {title:'SlotCatalog 市場曝光榜',color:'var(--bl)',
-       desc:'適合看市場正在推什麼，但高曝光可能受大廠鋪貨能力、casino lobby 位置與市場權重影響，不等於遊戲品質。',
+      {title:'SlotCatalog 玩家評分榜',color:'var(--bl)',
+       desc:'網站訪客自行投票的平均分數，樣本數普遍很小（中位數僅1票），與 CGN/BWB 幾乎無相關性，不等於遊戲品質，參考價值較低。',
        data:topNDiverse(baseAll.filter(function(g){return g.sc_rating!=null;}).sort(function(a,b){return(fmtSrcNum(b.sc_rating)||0)-(fmtSrcNum(a.sc_rating)||0);}),10),
        valFn:function(g){return fmtSrc(g.sc_rating);}},
       {title:'BWB 評價榜',color:'#e96f6f',
@@ -4587,7 +4587,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
         <select id="gsf"><option value="">所有來源</option><option value="both">雙來源</option><option value="cgn">僅 CGN</option><option value="sc">僅 SC</option><option value="none">無評分</option></select>
         <select id="gso" style="min-width:140px">
           <option value="priority">研究優先度</option><option value="year">最新年份</option>
-          <option value="cgscore">CGN 數值吸引力</option><option value="sc_rating">SlotCatalog 市場曝光</option>
+          <option value="cgscore">CGN 數值吸引力</option><option value="sc_rating">SlotCatalog 玩家評分</option>
           <option value="bwb_rating">BWB 評價</option><option value="max_win">最高倍率</option>
           <option value="name">遊戲名稱</option><option value="provider">遊戲商</option>
         </select>
@@ -4606,7 +4606,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
           <th data-c="name">遊戲名稱</th><th data-c="provider">遊戲商</th><th data-c="year" style="width:52px">年份</th>
           <th>研究理由</th>
           <th data-c="cgscore" style="text-align:right;width:76px" title="CGN 數值吸引力：偏向網站自家演算法，可能包含熱門度、RTP、Big Win potential。不是純玩家口碑。">CGN 數值</th>
-          <th data-c="sc_rating" style="text-align:right;width:76px" title="SlotCatalog 市場曝光：偏向 casino lobby 能見度，不等於遊戲品質。">SC 曝光</th>
+          <th data-c="sc_rating" style="text-align:right;width:76px" title="SlotCatalog 玩家評分：訪客自行投票的平均分數，樣本數普遍很小，不等於遊戲品質。">SC 評分</th>
           <th data-c="bwb_rating" style="text-align:right;width:76px" title="BWB 評價：偏向專業評測與玩家社群反應。">BWB 評價</th>
           <th>主要機制</th><th>系列</th>
           <th style="width:80px;text-align:center">操作</th>
@@ -4651,7 +4651,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
 
     qs('#g-export-csv').onclick=()=>{
       if(!_gbAllFiltered.length){toast('沒有篩選結果可匯出');return;}
-      const h='名稱,遊戲商,年份,CGN數值吸引力,SlotCatalog市場曝光,BWB評價,RTP,最高倍率,機制,主題,生態系,Source URL';
+      const h='名稱,遊戲商,年份,CGN數值吸引力,SlotCatalog玩家評分,BWB評價,RTP,最高倍率,機制,主題,生態系,Source URL';
       const rows=_gbAllFiltered.map(g=>[
         g.name,g.provider||'',g.year||'',
         g.cgscore!=null?g.cgscore:'',fmtSrc(g.sc_rating),fmtSrc(g.bwb_rating),
@@ -4733,7 +4733,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
             <div class="gd-drawer-section"><div class="gd-drawer-label">基礎資料</div>
               <div class="gd-drawer-val">RTP：${g.rtp||'—'}<br>最高倍率：${g.max_win?g.max_win+'x':'—'}<br>輪軸：${g.reels||'—'}<br>波動：${g.volatility||'—'}<br>命中率：${g.hit_freq_pct!=null?g.hit_freq_pct.toFixed(1)+'%':'—'}</div></div>
             <div class="gd-drawer-section"><div class="gd-drawer-label">評分來源</div>
-              <div class="gd-drawer-val"><span style="color:var(--txd);font-size:10px">CGN 數值吸引力</span><br>${g.cgscore!=null?g.cgscore.toFixed(0):'—'}<br><span style="color:var(--txd);font-size:10px">SlotCatalog 市場曝光</span><br>${fmtSrc(g.sc_rating)}<br><span style="color:var(--txd);font-size:10px">BWB 評價</span><br>${fmtSrc(g.bwb_rating)}</div></div>
+              <div class="gd-drawer-val"><span style="color:var(--txd);font-size:10px">CGN 數值吸引力</span><br>${g.cgscore!=null?g.cgscore.toFixed(0):'—'}<br><span style="color:var(--txd);font-size:10px">SlotCatalog 玩家評分</span><br>${fmtSrc(g.sc_rating)}<br><span style="color:var(--txd);font-size:10px">BWB 評價</span><br>${fmtSrc(g.bwb_rating)}</div></div>
             <div class="gd-drawer-section"><div class="gd-drawer-label">生態系</div>
               <div class="gd-drawer-val">${g.ecosystem||'—'}<br><span style="font-size:10px;color:var(--txd)">${g.ecosystem_confidence||''}</span></div></div>
             <div class="gd-drawer-section"><div class="gd-drawer-label">全部機制（${(g.mechanics||[]).length}）</div>
