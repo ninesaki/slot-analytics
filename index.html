@@ -4729,6 +4729,17 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
       expBtn.onclick=e=>{e.stopPropagation();drOpen=!drOpen;expBtn.textContent=drOpen?'收合':'展開';
         if(drOpen){
           const dr=mk('tr','gd-drawer');const td=mk('td');td.colSpan=10;
+          // Phase 1 (2026-09-07): three-source links. Only render a link for
+          // a source that actually has a clean URL; hide the whole section
+          // if none do (currently unreachable — every game has at least one
+          // of the three — but kept per spec since that could change).
+          const srcLinks=[
+            g.cgn_url?{label:'CasinoGamesOnNet',url:g.cgn_url}:null,
+            g.sc_url?{label:'SlotCatalog',url:g.sc_url}:null,
+            g.bwb_url?{label:'BigWinBoard',url:g.bwb_url}:null,
+          ].filter(Boolean);
+          const srcSectionHtml=srcLinks.length?`<div class="gd-drawer-section"><div class="gd-drawer-label">資料來源</div>
+              <div class="gd-drawer-val" style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">${srcLinks.map(s=>`<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="gc-btn" style="font-size:11px;text-decoration:none">${s.label}</a>`).join('')}</div></div>`:'';
           td.innerHTML=`<div class="gd-drawer-grid">
             <div class="gd-drawer-section"><div class="gd-drawer-label">基礎資料</div>
               <div class="gd-drawer-val">RTP：${g.rtp||'—'}<br>最高倍率：${g.max_win?g.max_win+'x':'—'}<br>輪軸：${g.reels||'—'}<br>波動：${g.volatility||'—'}<br>命中率：${g.hit_freq_pct!=null?g.hit_freq_pct.toFixed(1)+'%':'—'}</div></div>
@@ -4736,6 +4747,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
               <div class="gd-drawer-val"><span style="color:var(--txd);font-size:10px">CGN 數值吸引力</span><br>${g.cgscore!=null?g.cgscore.toFixed(0):'—'}<br><span style="color:var(--txd);font-size:10px">SlotCatalog 玩家評分</span><br>${fmtSrc(g.sc_rating)}<br><span style="color:var(--txd);font-size:10px">BWB 評價</span><br>${fmtSrc(g.bwb_rating)}</div></div>
             <div class="gd-drawer-section"><div class="gd-drawer-label">生態系</div>
               <div class="gd-drawer-val">${g.ecosystem||'—'}<br><span style="font-size:10px;color:var(--txd)">${g.ecosystem_confidence||''}</span></div></div>
+            ${srcSectionHtml}
             <div class="gd-drawer-section"><div class="gd-drawer-label">全部機制（${(g.mechanics||[]).length}）</div>
               <div class="gd-drawer-val">${(g.mechanics||[]).map(m=>`<span class="tag tm" style="font-size:11px;margin:1px">${m}</span>`).join('')||'—'}</div></div>
             <div class="gd-drawer-section"><div class="gd-drawer-label">全部主題（${(g.themes||[]).length}）</div>
