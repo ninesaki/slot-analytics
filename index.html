@@ -661,7 +661,7 @@ wlRender();
 
 // ── Radar Batch Add ───────────────────────────────────────────────────────────
 function wlRadarAdd(provName,priority){
-  const SI=D.series_index||[];
+  const SI=D.series_index||D.games;
   const recent=SI.filter(g=>(g.provider_normalized||g.provider_raw||'')===provName&&(g.year||0)>=2023)
     .sort((a,b)=>(b.score||0)-(a.score||0)).slice(0,6);
   if(!recent.length){toast(`${provName} 無 2023 年後遊戲資料`);return;}
@@ -4375,7 +4375,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
 // ── Emerging Studio Radar ─────────────────────────────────────────────────────
 (function(){
   const s=qs('#s-radar');
-  const SI=D.series_index;
+  const SI=D.series_index||D.games;
   const RECENT_YEARS=[2024,2025,2026];
   const CANDIDATES_MAX=80;  // upper limit: total <= this to be "candidates"
   const RAPID_MIN=50;       // lower limit: total >= this + new pattern → rapid growth
@@ -4763,7 +4763,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
 // ── Series Research / Reskin Analysis ────────────────────────────────────────
 (function(){
   const s=qs('#s-series');
-  const SI=D.series_index;
+  const SI=D.series_index||D.games;
   const MANUAL_SERIES=window.MANUAL_SERIES||{};
 
   // ── Labels & Colors ──────────────────────────────────────────────────────
@@ -5473,7 +5473,7 @@ function formatMechanicsForPrompt(game){
 (function(){
   const s=qs('#s-matcher');
   if(!s)return;
-  const GAMES=D.series_index||[];
+  const GAMES=D.series_index||D.games;
 
   // ── Condition groups ──────────────────────────────────────────────────────
   // Built dynamically from D.mechanic_meta (Python's MECHANIC_META — the same
