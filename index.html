@@ -5983,11 +5983,69 @@ function formatMechanicsForPrompt(game){
     if(!rows.length)return`<div style="font-size:12px;color:var(--txd);padding:8px 0">${emptyMsg}</div>`;
     return rows.map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:13px"><span>${r.name}</span><span>${r.prevPct.toFixed(0)}% → ${r.curPct.toFixed(0)}% <b style="color:${deltaColor(r.deltaPp)}">(${r.deltaPp>0?'+':''}${r.deltaPp.toFixed(1)}pp)</b></span></div>`).join('');
   }
+  function trendListPlain(rows){
+    if(!rows.length)return`<div style="font-size:12px;color:var(--txd);padding:8px 0">本月無足夠資料</div>`;
+    return rows.slice(0,8).map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:13px"><span>${r.name}</span><span style="color:var(--txd)">${r.curPct.toFixed(0)}%（${r.c} 款）</span></div>`).join('');
+  }
+  // Phase 5A.1: gate the Growing/Declining comparison behind coverage
+  // reliability. Low confidence never shows a ranked delta (that's the part
+  // that can be visually misread as a real market trend) — it can still show
+  // this month's plain usage numbers, which make no comparative claim.
+  function trendBlock(curPct,prevPct,growingRows,decliningRows,topRows,growLabel,declLabel){
+    const tier=combinedTier(curPct,prevPct);
+    if(tier==='low'){
+      return `<div style="font-size:13px;color:var(--rd);margin-bottom:8px">● 資料不足，暫不判定趨勢（覆蓋率過低，兩個月份的差異不可靠）</div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">本月使用量（僅供參考，非趨勢判定）</div>
+        ${trendListPlain(topRows)}`;
+    }
+    const warnLine=tier==='medium'?'<div style="font-size:12px;color:var(--am);margin-bottom:8px">⚠ Coverage 中等，趨勢僅供參考</div>':'';
+    return `${warnLine}<div class="g2"><div><div style="font-size:12px;font-weight:700;color:var(--gn);margin-bottom:6px">${growLabel}</div>${trendList(growingRows,'本月無明顯成長')}</div><div><div style="font-size:12px;font-weight:700;color:var(--rd);margin-bottom:6px">${declLabel}</div>${trendList(decliningRows,'本月無明顯下降')}</div></div>`;
+  }
   function seriesList(rows,emptyMsg){
     if(!rows.length)return`<div style="font-size:12px;color:var(--txd);padding:8px 0">${emptyMsg}</div>`;
     return rows.slice(0,6).map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:13px"><span>${r.sn}</span><span style="color:var(--txd)">${r.count} 款</span></div>`).join('');
   }
   function scoreNum100(v){if(v==null)return null;const n=Number(v);if(!Number.isFinite(n))return null;return n<=10?n*10:n;}
+
+  // Phase 5A.1: coverage-based trend reliability. Thresholds (≥80% high,
+  // 50–79% medium, <50% low) were chosen from the actual last-36-month
+  // coverage distribution (see report), not guessed — mechanic coverage's
+  // real cliff for under-scraped recent months falls well below 80%, while
+  // "settled" months cluster at 87–100%; theme coverage is chronically low
+  // (median ~7% in the recent window) and is expected to sit in "low" most
+  // of the time — that is a correct reflection of the data, not a bug, and
+  // the threshold must not be lowered just to make Theme Trends look active.
+  const REL_HIGH=80,REL_MED=50;
+  const REL_RANK={low:0,medium:1,high:2};
+  const REL_LABEL={high:'高可信',medium:'中等可信',low:'資料不足'};
+  const REL_ICON={high:'●',medium:'⚠',low:'●'};
+  const REL_COLOR={high:'var(--gn)',medium:'var(--am)',low:'var(--rd)'};
+  function coverageTier(pct){return pct>=REL_HIGH?'high':(pct>=REL_MED?'medium':'low');}
+  // A trend delta spans two months — reliability must reflect whichever
+  // month is weaker, not just the current one (see report section 三).
+  function combinedTier(curPct,prevPct){
+    if(prevPct==null)return coverageTier(curPct);
+    const a=coverageTier(curPct),b=coverageTier(prevPct);
+    return REL_RANK[a]<=REL_RANK[b]?a:b;
+  }
+  function coverageBadge(label,pct){
+    const t=coverageTier(pct);
+    return `<span style="color:${REL_COLOR[t]}">${label} ${pct.toFixed(0)}% ${REL_ICON[t]} ${REL_LABEL[t]}</span>`;
+  }
+  // Ongoing / future month status — separate concern from coverage: even a
+  // fully-tagged ongoing month is not a finished monthly result yet (see
+  // report section 十二/十三).
+  function monthStatus(monthKey){
+    if(monthKey>curKey)return'future';
+    if(monthKey===curKey)return'ongoing';
+    return'complete';
+  }
+  function monthStatusBadge(monthKey){
+    const st=monthStatus(monthKey);
+    if(st==='ongoing')return' <span style="font-size:13px;font-weight:400;color:var(--am)">（進行中，本月尚未結束）</span>';
+    if(st==='future')return' <span style="font-size:13px;font-weight:400;color:var(--rd)">（預告 / 未完整月份，僅供參考）</span>';
+    return'';
+  }
 
   // ── Month selector ──────────────────────────────────────────────────────
   const header=mk('div','sh');
@@ -6022,7 +6080,10 @@ function formatMechanicsForPrompt(game){
     const pmd=MD.by_month[pmKey];
     const pgs=pmd?monthGames(pmKey):[];
 
-    coverageNote.textContent=`資料品質 — 機制 ${md.mechanic_denom}/${total} (${(md.mechanic_denom/total*100).toFixed(0)}%) · 題材 ${md.theme_denom}/${total} (${(md.theme_denom/total*100).toFixed(0)}%) · 評分 ${md.score_count}/${total} (${(md.score_count/total*100).toFixed(0)}%)`;
+    const curMechPct=md.mechanic_denom/total*100,curThemePct=md.theme_denom/total*100;
+    const prevMechPct=(pmd&&pgs.length)?pmd.mechanic_denom/pgs.length*100:null;
+    const prevThemePct=(pmd&&pgs.length)?pmd.theme_denom/pgs.length*100:null;
+    coverageNote.innerHTML=`資料可信度 — ${coverageBadge('機制',curMechPct)} · ${coverageBadge('題材',curThemePct)} · <span style="color:var(--txd)">評分 ${md.score_count}/${total} (${(md.score_count/total*100).toFixed(0)}%)</span>`;
 
     if(total<MIN_MONTH_SAMPLE){
       const warn=mk('div','card');
@@ -6043,7 +6104,7 @@ function formatMechanicsForPrompt(game){
       const deltaTxt=d!=null?`<span style="color:${deltaColor(d)};font-size:12px;margin-left:6px">${fmtDelta(val,pval,opts)}</span>`:'';
       return `<div><div style="font-size:12px;color:var(--txd)">${label}</div><div style="font-size:28px;font-weight:700">${isNum?val:(val??'—')}${deltaTxt}</div></div>`;
     }
-    secA.innerHTML=`<div class="ct">${selectedMonth} 月度總覽</div>
+    secA.innerHTML=`<div class="ct">${selectedMonth} 月度總覽${monthStatusBadge(selectedMonth)}</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:12px">
       ${statBlock('本月發行遊戲數',total,pmd?pgs.length:null)}
       ${statBlock('活躍 Provider 數',activeProviders,pActiveProviders)}
@@ -6069,7 +6130,9 @@ function formatMechanicsForPrompt(game){
       tbl+=`<tr style="border-bottom:1px solid var(--bd)"><td style="padding:6px 8px">${r.name}</td><td style="text-align:right;padding:6px 8px">${r.cur}</td><td style="text-align:right;padding:6px 8px;color:var(--txd)">${r.prev??'—'}</td><td style="text-align:right;padding:6px 8px;color:${diffCol}">${diffTxt}</td><td style="text-align:right;padding:6px 8px">${r.avgS!=null?r.avgS.toFixed(1):'—'}</td></tr>`;
     });
     tbl+='</tbody></table>';
-    secB.innerHTML='<div class="ct">Provider 活躍度（Top 10）</div>';
+    const ongoingNote=monthStatus(selectedMonth)!=='complete'
+      ?`<div style="font-size:12px;color:var(--am);margin-bottom:8px">⚠ ${monthStatus(selectedMonth)==='ongoing'?'本月尚未結束':'本月為未完整月份'}，本月發行數與差異僅為即時統計，非最終月報結果</div>`:'';
+    secB.innerHTML=`<div class="ct">Provider 活躍度（Top 10）</div>${ongoingNote}`;
     secB.insertAdjacentHTML('beforeend',tbl);
     body.appendChild(secB);
 
@@ -6081,7 +6144,7 @@ function formatMechanicsForPrompt(game){
     const topMechByPen=mechRows.slice().sort((a,b)=>b.curPct-a.curPct||a.name.localeCompare(b.name)).slice(0,10);
     secC.innerHTML=`<div class="ct">玩法機制趨勢 (Mechanic Trends)</div>
       <div style="font-size:12px;color:var(--txd);margin-bottom:10px">Penetration ＝ 使用該機制的當月遊戲數 ／ 當月有機制資料的遊戲數（${md.mechanic_denom} 款）。最低支持度：當月 ≥${MIN_TAG_SUPPORT} 款，或當月＋上月合計 ≥${MIN_TAG_SUPPORT} 款，避免 1→2 款被誤讀為爆發成長。</div>
-      ${pmd?`<div class="g2"><div><div style="font-size:12px;font-weight:700;color:var(--gn);margin-bottom:6px">Growing</div>${trendList(growingMech,'本月無明顯成長機制')}</div><div><div style="font-size:12px;font-weight:700;color:var(--rd);margin-bottom:6px">Declining</div>${trendList(decliningMech,'本月無明顯下降機制')}</div></div>`:'<div style="font-size:12px;color:var(--txd);margin-bottom:10px">無足夠前月資料，僅顯示本月排行</div>'}`;
+      ${pmd?trendBlock(curMechPct,prevMechPct,growingMech,decliningMech,topMechByPen,'Growing','Declining'):'<div style="font-size:12px;color:var(--txd);margin-bottom:10px">無足夠前月資料，僅顯示本月排行</div>'}`;
     secC.appendChild(barChart(topMechByPen.map(r=>[r.name,Math.round(r.curPct*10)/10]),{color:'var(--am)',limit:10,pctLabel:true}));
     body.appendChild(secC);
 
@@ -6090,9 +6153,10 @@ function formatMechanicsForPrompt(game){
     const themeRows=penetrationRows(md.theme_counts,md.theme_denom,pmd?pmd.theme_counts:null,pmd?pmd.theme_denom:null);
     const growingTheme=themeRows.filter(r=>r.deltaPp!=null&&r.deltaPp>0).sort((a,b)=>b.deltaPp-a.deltaPp||a.name.localeCompare(b.name)).slice(0,8);
     const decliningTheme=themeRows.filter(r=>r.deltaPp!=null&&r.deltaPp<0).sort((a,b)=>a.deltaPp-b.deltaPp||a.name.localeCompare(b.name)).slice(0,8);
+    const topThemeByPen=themeRows.slice().sort((a,b)=>b.curPct-a.curPct||a.name.localeCompare(b.name)).slice(0,10);
     secD.innerHTML=`<div class="ct">題材趨勢 (Theme Trends)</div>
-      <div style="font-size:12px;color:var(--txd);margin-bottom:10px">計算方式與 Mechanic Trends 相同，沿用現有 Theme 正規化結果（本月有題材資料 ${md.theme_denom} 款）。</div>
-      ${pmd?`<div class="g2"><div><div style="font-size:12px;font-weight:700;color:var(--gn);margin-bottom:6px">Growing Themes</div>${trendList(growingTheme,'本月無明顯成長題材')}</div><div><div style="font-size:12px;font-weight:700;color:var(--rd);margin-bottom:6px">Declining Themes</div>${trendList(decliningTheme,'本月無明顯下降題材')}</div></div>`:'<div style="font-size:12px;color:var(--txd)">無足夠前月資料</div>'}`;
+      <div style="font-size:12px;color:var(--txd);margin-bottom:10px">計算方式與 Mechanic Trends 相同，沿用現有 Theme 正規化結果（本月有題材資料 ${md.theme_denom} 款）。Theme 資料庫整體覆蓋率僅約 24.5%，多數月份會落在「資料不足」屬正常現象，不代表功能異常。</div>
+      ${pmd?trendBlock(curThemePct,prevThemePct,growingTheme,decliningTheme,topThemeByPen,'Growing Themes','Declining Themes'):'<div style="font-size:12px;color:var(--txd)">無足夠前月資料</div>'}`;
     body.appendChild(secD);
 
     // ── Section E: Notable Games ────────────────────────────────────────────
