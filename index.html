@@ -5979,27 +5979,34 @@ function formatMechanicsForPrompt(game){
     });
     return rows;
   }
-  function trendList(rows,emptyMsg){
-    if(!rows.length)return`<div style="font-size:12px;color:var(--txd);padding:8px 0">${emptyMsg}</div>`;
-    return rows.map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:13px"><span>${r.name}</span><span>${r.prevPct.toFixed(0)}% → ${r.curPct.toFixed(0)}% <b style="color:${deltaColor(r.deltaPp)}">(${r.deltaPp>0?'+':''}${r.deltaPp.toFixed(1)}pp)</b></span></div>`).join('');
+  // Phase 5A.6: names in these lists open the Trend Explorer modal. Reuses
+  // the same escaping convention already used for provider names in
+  // Emerging Studio Radar's onclick attributes (see wlRadarAdd call sites).
+  function jsEscape(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
+  function clickableName(entityType,name){
+    return `<span style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px" onclick="openTrendExplorer('${entityType}','${jsEscape(name)}')" title="查看過去 12 個月趨勢">${name}</span>`;
   }
-  function trendListPlain(rows){
+  function trendList(rows,emptyMsg,entityType){
+    if(!rows.length)return`<div style="font-size:12px;color:var(--txd);padding:8px 0">${emptyMsg}</div>`;
+    return rows.map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:13px"><span>${clickableName(entityType,r.name)}</span><span>${r.prevPct.toFixed(0)}% → ${r.curPct.toFixed(0)}% <b style="color:${deltaColor(r.deltaPp)}">(${r.deltaPp>0?'+':''}${r.deltaPp.toFixed(1)}pp)</b></span></div>`).join('');
+  }
+  function trendListPlain(rows,entityType){
     if(!rows.length)return`<div style="font-size:12px;color:var(--txd);padding:8px 0">本月無足夠資料</div>`;
-    return rows.slice(0,8).map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:13px"><span>${r.name}</span><span style="color:var(--txd)">${r.curPct.toFixed(0)}%（${r.c} 款）</span></div>`).join('');
+    return rows.slice(0,8).map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:13px"><span>${clickableName(entityType,r.name)}</span><span style="color:var(--txd)">${r.curPct.toFixed(0)}%（${r.c} 款）</span></div>`).join('');
   }
   // Phase 5A.1: gate the Growing/Declining comparison behind coverage
   // reliability. Low confidence never shows a ranked delta (that's the part
   // that can be visually misread as a real market trend) — it can still show
   // this month's plain usage numbers, which make no comparative claim.
-  function trendBlock(curPct,prevPct,growingRows,decliningRows,topRows,growLabel,declLabel){
+  function trendBlock(curPct,prevPct,growingRows,decliningRows,topRows,growLabel,declLabel,entityType){
     const tier=combinedTier(curPct,prevPct);
     if(tier==='low'){
       return `<div style="font-size:13px;color:var(--rd);margin-bottom:8px">● 資料不足，暫不判定趨勢（覆蓋率過低，兩個月份的差異不可靠）</div>
         <div style="font-size:12px;font-weight:700;margin-bottom:6px">本月使用量（僅供參考，非趨勢判定）</div>
-        ${trendListPlain(topRows)}`;
+        ${trendListPlain(topRows,entityType)}`;
     }
     const warnLine=tier==='medium'?'<div style="font-size:12px;color:var(--am);margin-bottom:8px">⚠ Coverage 中等，趨勢僅供參考</div>':'';
-    return `${warnLine}<div class="g2"><div><div style="font-size:12px;font-weight:700;color:var(--gn);margin-bottom:6px">${growLabel}</div>${trendList(growingRows,'本月無明顯成長')}</div><div><div style="font-size:12px;font-weight:700;color:var(--rd);margin-bottom:6px">${declLabel}</div>${trendList(decliningRows,'本月無明顯下降')}</div></div>`;
+    return `${warnLine}<div class="g2"><div><div style="font-size:12px;font-weight:700;color:var(--gn);margin-bottom:6px">${growLabel}</div>${trendList(growingRows,'本月無明顯成長',entityType)}</div><div><div style="font-size:12px;font-weight:700;color:var(--rd);margin-bottom:6px">${declLabel}</div>${trendList(decliningRows,'本月無明顯下降',entityType)}</div></div>`;
   }
   function seriesList(rows,emptyMsg){
     if(!rows.length)return`<div style="font-size:12px;color:var(--txd);padding:8px 0">${emptyMsg}</div>`;
@@ -6178,6 +6185,97 @@ function formatMechanicsForPrompt(game){
     if(st==='future')return' <span style="font-size:13px;font-weight:400;color:var(--rd)">（預告 / 未完整月份，僅供參考）</span>';
     return'';
   }
+
+  // Phase 5A.6: Monthly Trend Explorer — 12-month drill-down for a single
+  // provider/mechanic/theme, computed entirely from the existing
+  // D.monthly.by_month (no new payload, no Snapshot). Chronological order is
+  // built by explicit unshift, never by iterating an object's/Set's keys, so
+  // output order is deterministic regardless of any month's internal key
+  // insertion order.
+  function monthsWindow(endMonth,n){
+    const out=[];
+    let [y,m]=endMonth.split('-').map(Number);
+    for(let i=0;i<n;i++){
+      out.unshift(`${y}-${String(m).padStart(2,'0')}`);
+      m--;if(m===0){m=12;y--;}
+    }
+    return out;
+  }
+  function computeTrendSeries(entityType,entityName,endMonth){
+    const months=monthsWindow(endMonth,12);
+    return months.map(mo=>{
+      const md2=MD.by_month[mo];
+      const total=md2?md2.game_ids.length:0;
+      if(entityType==='provider'){
+        const count=md2?(md2.provider_counts[entityName]||0):0;
+        let avgScore=null;
+        if(md2&&count>0){
+          const scores=monthGames(mo).filter(g=>(g.provider_normalized||g.provider_raw||'Unknown')===entityName).map(g=>g.score).filter(v=>v!=null);
+          avgScore=scores.length?scores.reduce((a,b)=>a+b,0)/scores.length:null;
+        }
+        // share/avgScore null (not 0%) when there is literally no release
+        // data for the month at all — see report section 七.
+        return{month:mo,exists:!!md2,count,total,share:total?count/total*100:null,avgScore};
+      }
+      const counts=md2?(entityType==='mechanic'?md2.mechanic_counts:md2.theme_counts):{};
+      const denom=md2?(entityType==='mechanic'?md2.mechanic_denom:md2.theme_denom):0;
+      const count=counts[entityName]||0;
+      const penetration=denom?count/denom*100:null;   // null (N/A), never 0%, when denom=0
+      const coverage=total?denom/total*100:null;
+      const reliability=coverage!=null?coverageTier(coverage):null;
+      return{month:mo,exists:!!md2,count,denom,total,penetration,coverage,reliability};
+    });
+  }
+  function showTrendModal(entityType,entityName,endMonth){
+    const series=computeTrendSeries(entityType,entityName,endMonth);
+    const ov=mk('div','wl-modal-overlay');
+    const modal=mk('div','wl-modal');
+    modal.style.width='680px';
+    const typeLabel={provider:'Provider',mechanic:'Mechanic',theme:'Theme'}[entityType];
+    const windowLabel=`${series[0].month} → ${series[series.length-1].month}`;
+    const monthsArr=series.map(pt=>pt.month);
+    // Chart values: missing/N/A points plot as 0 (same convention this
+    // codebase already uses elsewhere, e.g. Reel Analysis) — the table below
+    // is the authoritative source and shows N/A/reliability explicitly, per
+    // report section 九's "如果 styling 很困難" fallback.
+    const chartValues={};
+    series.forEach(pt=>{chartValues[pt.month]=entityType==='provider'?pt.count:(pt.penetration||0);});
+
+    let tableHtml;
+    if(entityType==='provider'){
+      tableHtml='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--bd)"><th style="text-align:left;padding:4px 6px">月份</th><th style="text-align:right;padding:4px 6px">發行數</th><th style="text-align:right;padding:4px 6px">當月總發行</th><th style="text-align:right;padding:4px 6px">Share</th><th style="text-align:right;padding:4px 6px">平均分</th></tr></thead><tbody>';
+      series.forEach(pt=>{
+        tableHtml+=`<tr style="border-bottom:1px solid var(--bd)"><td style="padding:4px 6px">${pt.month}</td><td style="text-align:right;padding:4px 6px">${pt.count}</td><td style="text-align:right;padding:4px 6px;color:var(--txd)">${pt.total}</td><td style="text-align:right;padding:4px 6px">${pt.share!=null?pt.share.toFixed(1)+'%':'—'}</td><td style="text-align:right;padding:4px 6px">${pt.avgScore!=null?pt.avgScore.toFixed(1):'—'}</td></tr>`;
+      });
+      tableHtml+='</tbody></table>';
+    } else {
+      tableHtml='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--bd)"><th style="text-align:left;padding:4px 6px">月份</th><th style="text-align:right;padding:4px 6px">使用數</th><th style="text-align:right;padding:4px 6px">分母</th><th style="text-align:right;padding:4px 6px">Penetration</th><th style="text-align:right;padding:4px 6px">Coverage</th><th style="text-align:center;padding:4px 6px">可信度</th></tr></thead><tbody>';
+      series.forEach(pt=>{
+        const relColor=pt.reliability?REL_COLOR[pt.reliability]:'var(--txd)';
+        const relLabel=pt.reliability?REL_LABEL[pt.reliability]:'—';
+        tableHtml+=`<tr style="border-bottom:1px solid var(--bd)"><td style="padding:4px 6px">${pt.month}</td><td style="text-align:right;padding:4px 6px">${pt.count}</td><td style="text-align:right;padding:4px 6px;color:var(--txd)">${pt.denom}</td><td style="text-align:right;padding:4px 6px">${pt.penetration!=null?pt.penetration.toFixed(1)+'%':'N/A'}</td><td style="text-align:right;padding:4px 6px">${pt.coverage!=null?pt.coverage.toFixed(0)+'%':'N/A'}</td><td style="text-align:center;padding:4px 6px;color:${relColor}">${relLabel}</td></tr>`;
+      });
+      tableHtml+='</tbody></table>';
+    }
+
+    modal.innerHTML=`
+      <div class="wl-modal-title">${entityName}（${typeLabel}）— 過去 12 個月<br><span style="font-size:11px;color:var(--txd);font-weight:400">${windowLabel}</span></div>
+      <div style="font-size:11px;color:var(--txd);margin-bottom:10px">${entityType==='provider'?'主圖為每月發行數；':'主圖為 Penetration %（非 raw count）；'}未使用 Snapshot 歷史資料，僅基於「遊戲發行月份」統計。缺乏當月資料時圖表以 0 呈現，實際數值請見下方表格的 N/A 標示。此為原始 12 個月數據，不代表任何「持續成長／短期波動」的判定，請自行研判。</div>
+      <div id="trend-chart-holder" style="margin-bottom:10px"></div>
+      <div style="max-height:260px;overflow-y:auto">${tableHtml}</div>
+      <div style="display:flex;margin-top:14px">
+        <button id="trend-close" style="flex:1;padding:8px;background:none;border:1px solid var(--bd);color:var(--txd);font-family:inherit;font-size:13px;cursor:pointer">關閉</button>
+      </div>`;
+    modal.querySelector('#trend-chart-holder').appendChild(
+      lineChart([{color:'var(--am)',values:chartValues}],monthsArr,{h:160})
+    );
+    modal.querySelector('#trend-close').onclick=()=>ov.remove();
+    ov.appendChild(modal);document.body.appendChild(ov);
+    ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  }
+  // Global entry point — called from inline onclick attributes generated by
+  // clickableName() above, which run outside this IIFE's closure.
+  window.openTrendExplorer=function(type,name){showTrendModal(type,name,selectedMonth);};
 
   // ── Month selector ──────────────────────────────────────────────────────
   const header=mk('div','sh');
@@ -6376,7 +6474,7 @@ function formatMechanicsForPrompt(game){
     vm.provRows.forEach(r=>{
       const diffTxt=r.diff==null?'—':(r.diff>0?'+':'')+r.diff;
       const diffCol=r.diff==null?'var(--txd)':deltaColor(r.diff);
-      tbl+=`<tr style="border-bottom:1px solid var(--bd)"><td style="padding:6px 8px">${r.name}</td><td style="text-align:right;padding:6px 8px">${r.cur}</td><td style="text-align:right;padding:6px 8px;color:var(--txd)">${r.prev??'—'}</td><td style="text-align:right;padding:6px 8px;color:${diffCol}">${diffTxt}</td><td style="text-align:right;padding:6px 8px">${r.avgS!=null?r.avgS.toFixed(1):'—'}</td></tr>`;
+      tbl+=`<tr style="border-bottom:1px solid var(--bd)"><td style="padding:6px 8px">${clickableName('provider',r.name)}</td><td style="text-align:right;padding:6px 8px">${r.cur}</td><td style="text-align:right;padding:6px 8px;color:var(--txd)">${r.prev??'—'}</td><td style="text-align:right;padding:6px 8px;color:${diffCol}">${diffTxt}</td><td style="text-align:right;padding:6px 8px">${r.avgS!=null?r.avgS.toFixed(1):'—'}</td></tr>`;
     });
     tbl+='</tbody></table>';
     const ongoingNote=vm.status!=='complete'
@@ -6389,7 +6487,7 @@ function formatMechanicsForPrompt(game){
     const secC=mk('div','card');secC.style.marginBottom='16px';
     secC.innerHTML=`<div class="ct">玩法機制趨勢 (Mechanic Trends)</div>
       <div style="font-size:12px;color:var(--txd);margin-bottom:10px">Penetration ＝ 使用該機制的當月遊戲數 ／ 當月有機制資料的遊戲數（${md.mechanic_denom} 款）。最低支持度：當月 ≥${MIN_TAG_SUPPORT} 款，或當月＋上月合計 ≥${MIN_TAG_SUPPORT} 款，避免 1→2 款被誤讀為爆發成長。</div>
-      ${pmd?trendBlock(vm.curMechPct,vm.prevMechPct,vm.growingMech,vm.decliningMech,vm.topMechByPen,'Growing','Declining'):'<div style="font-size:12px;color:var(--txd);margin-bottom:10px">無足夠前月資料，僅顯示本月排行</div>'}`;
+      ${pmd?trendBlock(vm.curMechPct,vm.prevMechPct,vm.growingMech,vm.decliningMech,vm.topMechByPen,'Growing','Declining','mechanic'):'<div style="font-size:12px;color:var(--txd);margin-bottom:10px">無足夠前月資料，僅顯示本月排行</div>'}`;
     secC.appendChild(barChart(vm.topMechByPen.map(r=>[r.name,Math.round(r.curPct*10)/10]),{color:'var(--am)',limit:10,pctLabel:true}));
     body.appendChild(secC);
 
@@ -6397,7 +6495,7 @@ function formatMechanicsForPrompt(game){
     const secD=mk('div','card');secD.style.marginBottom='16px';
     secD.innerHTML=`<div class="ct">題材趨勢 (Theme Trends)</div>
       <div style="font-size:12px;color:var(--txd);margin-bottom:10px">計算方式與 Mechanic Trends 相同，沿用現有 Theme 正規化結果（本月有題材資料 ${md.theme_denom} 款）。Theme 資料庫整體覆蓋率僅約 24.5%，多數月份會落在「資料不足」屬正常現象，不代表功能異常。</div>
-      ${pmd?trendBlock(vm.curThemePct,vm.prevThemePct,vm.growingTheme,vm.decliningTheme,vm.topThemeByPen,'Growing Themes','Declining Themes'):'<div style="font-size:12px;color:var(--txd)">無足夠前月資料</div>'}`;
+      ${pmd?trendBlock(vm.curThemePct,vm.prevThemePct,vm.growingTheme,vm.decliningTheme,vm.topThemeByPen,'Growing Themes','Declining Themes','theme'):'<div style="font-size:12px;color:var(--txd)">無足夠前月資料</div>'}`;
     body.appendChild(secD);
 
     // ── Section E: Notable Games ────────────────────────────────────────────
