@@ -21,6 +21,7 @@
 
 <aside id="sidebar">
   <button class="ni" data-s="guide" style="color:var(--am);font-weight:700;border-bottom:1px solid var(--bd);margin-bottom:4px;padding-bottom:10px">使用教學</button>
+  <button class="ni" data-s="games" id="nav-gsearch" style="font-weight:700">遊戲查詢</button>
   <div class="nl">分析</div>
   <button class="ni on" data-s="overview">總覽</button>
   <button class="ni" data-s="provider">遊戲商策略</button>
@@ -73,11 +74,117 @@ function nav(id){
   if(el) el.classList.add('on');
 }
 document.querySelectorAll('.ni').forEach(b=>b.addEventListener('click',()=>nav(b.dataset.s)));
+// Phase 6A: "遊戲查詢" is the same #s-games section as "遊戲瀏覽" (shares
+// data-s="games", so nav() above already handles showing it) — this just
+// additionally pre-selects the 完整資料表 sub-tab so a first click lands
+// straight on the actual search/filter table instead of the research-
+// candidates tab. Looked up at click time (not cached) since Game Discovery
+// builds #gd-tabs once at page load, well before this can ever fire.
+(function(){
+  const b=document.getElementById('nav-gsearch');
+  if(!b)return;
+  b.addEventListener('click',()=>{
+    const t=document.querySelector('#gd-tabs [data-t="table"]');
+    if(t)t.click();
+  });
+})();
 
 // ── Utils ───────────────────────────────────────────────────────────────────
 const mk=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!==undefined)e.innerHTML=h;return e};
 const qs=(s,p)=>(p||document).querySelector(s);
 const qsa=(s,p)=>[...(p||document).querySelectorAll(s)];
+
+// ── Game-by-id lookup (Phase 6A) ────────────────────────────────────────────
+// Single site-wide id→game lookup. Before this, the only such map (in
+// Monthly Competitive Analysis, Phase 5A) was private to that section's IIFE
+// and unreachable from anywhere else — this replaces it as the one shared
+// copy rather than adding a second (see report).
+const GAME_BY_ID={};D.games.forEach(g=>{GAME_BY_ID[g.id]=g;});
+// Safe source score formatter: 0-10 → ×10, already 0-100 → as-is. Hoisted
+// out of the Game Discovery IIFE (was function-local there) so the shared
+// Game Detail modal below can use the same formatting without a duplicate.
+function fmtSrc(v){
+  if(v==null)return'—';const n=Number(v);
+  if(!Number.isFinite(n))return'—';
+  return n<=10?(n*10).toFixed(0):n.toFixed(0);
+}
+function fmtSrcNum(v){
+  if(v==null)return null;const n=Number(v);
+  if(!Number.isFinite(n))return null;
+  return n<=10?n*10:n;
+}
+
+// ── Shared Game Detail (Phase 6A) ───────────────────────────────────────────
+// The only Game Detail rendering in the codebase used to be the "完整資料表"
+// tab's per-row expandable <tr class="gd-drawer"> (Game Discovery IIFE),
+// which only worked because it could reach into its own table row's DOM
+// (insertAdjacentElement/nextElementSibling). That can't be called safely
+// from other sections, so this extracts the same field set (same order,
+// same labels, same gd-drawer-* classes) into one shared function and
+// exposes it as a modal — the drawer's call site now opens this modal
+// instead of building its own inline row (single source of truth, see
+// report section 八).
+function buildGameDetailBody(g){
+  const srcLinks=[
+    g.cgn_url?{label:'CasinoGamesOnNet',url:g.cgn_url}:null,
+    g.sc_url?{label:'SlotCatalog',url:g.sc_url}:null,
+    g.bwb_url?{label:'BigWinBoard',url:g.bwb_url}:null,
+  ].filter(Boolean);
+  const srcSectionHtml=srcLinks.length?`<div class="gd-drawer-section"><div class="gd-drawer-label">資料來源</div>
+      <div class="gd-drawer-val" style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">${srcLinks.map(s=>`<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="gc-btn" style="font-size:11px;text-decoration:none">${s.label}</a>`).join('')}</div></div>`:'';
+  return `<div class="gd-drawer-grid">
+    <div class="gd-drawer-section"><div class="gd-drawer-label">基礎資料</div>
+      <div class="gd-drawer-val">RTP：${g.rtp||'—'}<br>最高倍率：${g.max_win?g.max_win+'x':'—'}<br>輪軸：${g.reels||'—'}<br>波動：${g.volatility||'—'}<br>命中率：${g.hit_freq_pct!=null?g.hit_freq_pct.toFixed(1)+'%':'—'}</div></div>
+    <div class="gd-drawer-section"><div class="gd-drawer-label">評分來源</div>
+      <div class="gd-drawer-val"><span style="color:var(--txd);font-size:10px">CGN 數值吸引力</span><br>${g.cgscore!=null?g.cgscore.toFixed(0):'—'}<br><span style="color:var(--txd);font-size:10px">SlotCatalog 玩家評分</span><br>${fmtSrc(g.sc_rating)}<br><span style="color:var(--txd);font-size:10px">BWB 評價</span><br>${fmtSrc(g.bwb_rating)}</div></div>
+    <div class="gd-drawer-section"><div class="gd-drawer-label">生態系</div>
+      <div class="gd-drawer-val">${g.ecosystem||'—'}<br><span style="font-size:10px;color:var(--txd)">${g.ecosystem_confidence||''}</span></div></div>
+    ${srcSectionHtml}
+    <div class="gd-drawer-section"><div class="gd-drawer-label">全部機制（${(g.mechanics||[]).length}）</div>
+      <div class="gd-drawer-val">${(g.mechanics||[]).map(m=>`<span class="tag tm" style="font-size:11px;margin:1px">${m}</span>`).join('')||'—'}</div></div>
+    <div class="gd-drawer-section"><div class="gd-drawer-label">全部主題（${(g.themes||[]).length}）</div>
+      <div class="gd-drawer-val">${(g.themes||[]).map(t=>`<span class="tag tt" style="font-size:11px;margin:1px">${t}</span>`).join('')||'—'}</div></div>
+    <div class="gd-drawer-section"><div class="gd-drawer-label">操作</div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
+        <button class="gc-btn" id="gdm-cp-name" style="font-size:11px">複製遊戲名稱</button>
+        <button class="gc-btn" id="gdm-cp-prompt" style="font-size:11px">複製 Claude 分析 Prompt</button>
+        <button class="gc-btn" id="gdm-ser-link" style="font-size:11px">查看系列偵測</button>
+      </div></div>
+  </div>`;
+}
+window.openGameDetail=function(gameId){
+  const g=GAME_BY_ID[gameId];
+  if(!g){toast('找不到這款遊戲資料',false);return;}
+  const ov=mk('div','wl-modal-overlay');
+  const modal=mk('div','wl-modal');
+  modal.style.width='620px';
+  const metaLine=`${g.provider_normalized||g.provider||'?'} · ${g.year||'?'} · 分數 ${g.score!=null?Number(g.score).toFixed(1):'N/A'}`;
+  modal.innerHTML=`
+    <div class="wl-modal-title">${g.name}<br><span style="font-size:11px;color:var(--txd);font-weight:400">${metaLine}</span></div>
+    <div style="max-height:60vh;overflow-y:auto;margin:10px 0">${buildGameDetailBody(g)}</div>
+    <div style="display:flex;gap:8px">
+      <button id="gdm-wl" class="wl-add${wlHas(g.name)?' added':''}" style="flex:1;padding:8px">${wlHas(g.name)?'✓ 已加入 Watchlist':'加入 Watchlist'}</button>
+      <button id="gdm-close" style="flex:1;padding:8px;background:none;border:1px solid var(--bd);color:var(--txd);font-family:inherit;font-size:13px;cursor:pointer">關閉</button>
+    </div>`;
+  modal.querySelector('#gdm-cp-name').onclick=()=>{navigator.clipboard?.writeText(g.name);toast('已複製：'+g.name);};
+  modal.querySelector('#gdm-cp-prompt').onclick=()=>{
+    const pt='請分析以下 slot 遊戲：「'+g.name+'」（廠商：'+(g.provider||'?')+'，年份：'+(g.year||'?')+'）\\n機制：'+((g.mechanics||[]).join('、')||'未知')+'\\nRTP：'+(g.rtp||'?')+'，最高倍率：'+(g.max_win?g.max_win+'x':'?');
+    navigator.clipboard?.writeText(pt);toast('已複製分析 Prompt');
+  };
+  modal.querySelector('#gdm-ser-link').onclick=()=>{
+    ov.remove();
+    if(window.srGoToSeries){window.srGoToSeries(g.series_group||g.name||'');}
+    else{const b=qs('[data-s="series"]');if(b)b.click();toast('已切換到系列研究 / 換皮判斷');}
+  };
+  const wlBtn=modal.querySelector('#gdm-wl');
+  wlBtn.onclick=()=>{
+    if(wlHas(g.name)){wlRemove(g.name);wlBtn.textContent='加入 Watchlist';wlBtn.classList.remove('added');}
+    else wlShowAddModal(g,ok=>{if(ok){wlBtn.textContent='✓ 已加入 Watchlist';wlBtn.classList.add('added');}});
+  };
+  modal.querySelector('#gdm-close').onclick=()=>ov.remove();
+  ov.appendChild(modal);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+};
 
 // ── Top 3 快速洞察 ────────────────────────────────────────────────────────────
 const RANK_COLORS=['#f0a500','#7a8eab','#9b7ef8'];
@@ -3355,18 +3462,8 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
     <div id="gd-panel-table" style="display:none"></div>`;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-
-  // Safe source score formatter: 0-10 → ×10, already 0-100 → as-is
-  function fmtSrc(v){
-    if(v==null)return'—';const n=Number(v);
-    if(!Number.isFinite(n))return'—';
-    return n<=10?(n*10).toFixed(0):n.toFixed(0);
-  }
-  function fmtSrcNum(v){
-    if(v==null)return null;const n=Number(v);
-    if(!Number.isFinite(n))return null;
-    return n<=10?n*10:n;
-  }
+  // fmtSrc/fmtSrcNum are now global (Phase 6A, see top of script) — reused
+  // here rather than redeclared.
 
   // Provider counts
   const provCounts={};
@@ -3629,10 +3726,11 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
   function buildTableTab(){
     const p=qs('#gd-panel-table');if(p.dataset.ready)return;p.dataset.ready='1';
     p.innerHTML=`
+      <div class="sh" style="margin-bottom:14px"><div class="st">遊戲查詢</div><div class="ss">依遊戲名稱、Provider、Mechanic、Theme 與評分條件查找資料庫中的遊戲。</div></div>
       <p style="font-size:12px;color:var(--txd);margin:0 0 10px;line-height:1.6">研究模式會隱藏部分舊資料（year &lt; 2019 且評分低），避免干擾當前競品研究；可切換歷史全資料查看完整資料庫。</p>
       <div class="gd-filter-basic">
         <div class="gd-mode-toggle"><button class="gd-mode on" id="gd-mr">研究模式</button><button class="gd-mode" id="gd-mh">歷史全資料</button></div>
-        <input type="text" id="gsq" placeholder="搜尋名稱、機制、主題…" style="flex:1;min-width:160px">
+        <input type="text" id="gsq" placeholder="搜尋遊戲名稱、Provider、Mechanic、Theme…" style="flex:1;min-width:160px">
         <select id="gyf"><option value="">所有年份</option></select>
         <select id="gpf"><option value="">所有遊戲商</option></select>
         <select id="gsf"><option value="">所有來源</option><option value="both">雙來源</option><option value="cgn">僅 CGN</option><option value="sc">僅 SC</option><option value="none">無評分</option></select>
@@ -3775,53 +3873,14 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
         else wlShowAddModal(g,added=>{if(added){addBtn.textContent='✓';addBtn.classList.add('added');}});};
       actCell.appendChild(addBtn);
 
-      const expBtn=mk('button','gc-btn');expBtn.textContent='展開';expBtn.style.cssText='margin-left:4px;font-size:11px;padding:2px 6px';
-      let drOpen=false;
-      expBtn.onclick=e=>{e.stopPropagation();drOpen=!drOpen;expBtn.textContent=drOpen?'收合':'展開';
-        if(drOpen){
-          const dr=mk('tr','gd-drawer');const td=mk('td');td.colSpan=10;
-          // Phase 1 (2026-09-07): three-source links. Only render a link for
-          // a source that actually has a clean URL; hide the whole section
-          // if none do (currently unreachable — every game has at least one
-          // of the three — but kept per spec since that could change).
-          const srcLinks=[
-            g.cgn_url?{label:'CasinoGamesOnNet',url:g.cgn_url}:null,
-            g.sc_url?{label:'SlotCatalog',url:g.sc_url}:null,
-            g.bwb_url?{label:'BigWinBoard',url:g.bwb_url}:null,
-          ].filter(Boolean);
-          const srcSectionHtml=srcLinks.length?`<div class="gd-drawer-section"><div class="gd-drawer-label">資料來源</div>
-              <div class="gd-drawer-val" style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">${srcLinks.map(s=>`<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="gc-btn" style="font-size:11px;text-decoration:none">${s.label}</a>`).join('')}</div></div>`:'';
-          td.innerHTML=`<div class="gd-drawer-grid">
-            <div class="gd-drawer-section"><div class="gd-drawer-label">基礎資料</div>
-              <div class="gd-drawer-val">RTP：${g.rtp||'—'}<br>最高倍率：${g.max_win?g.max_win+'x':'—'}<br>輪軸：${g.reels||'—'}<br>波動：${g.volatility||'—'}<br>命中率：${g.hit_freq_pct!=null?g.hit_freq_pct.toFixed(1)+'%':'—'}</div></div>
-            <div class="gd-drawer-section"><div class="gd-drawer-label">評分來源</div>
-              <div class="gd-drawer-val"><span style="color:var(--txd);font-size:10px">CGN 數值吸引力</span><br>${g.cgscore!=null?g.cgscore.toFixed(0):'—'}<br><span style="color:var(--txd);font-size:10px">SlotCatalog 玩家評分</span><br>${fmtSrc(g.sc_rating)}<br><span style="color:var(--txd);font-size:10px">BWB 評價</span><br>${fmtSrc(g.bwb_rating)}</div></div>
-            <div class="gd-drawer-section"><div class="gd-drawer-label">生態系</div>
-              <div class="gd-drawer-val">${g.ecosystem||'—'}<br><span style="font-size:10px;color:var(--txd)">${g.ecosystem_confidence||''}</span></div></div>
-            ${srcSectionHtml}
-            <div class="gd-drawer-section"><div class="gd-drawer-label">全部機制（${(g.mechanics||[]).length}）</div>
-              <div class="gd-drawer-val">${(g.mechanics||[]).map(m=>`<span class="tag tm" style="font-size:11px;margin:1px">${m}</span>`).join('')||'—'}</div></div>
-            <div class="gd-drawer-section"><div class="gd-drawer-label">全部主題（${(g.themes||[]).length}）</div>
-              <div class="gd-drawer-val">${(g.themes||[]).map(t=>`<span class="tag tt" style="font-size:11px;margin:1px">${t}</span>`).join('')||'—'}</div></div>
-            <div class="gd-drawer-section"><div class="gd-drawer-label">操作</div>
-              <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
-                <button class="gc-btn gc-cp-name" style="font-size:11px">複製遊戲名稱</button>
-                <button class="gc-btn gc-cp-prompt" style="font-size:11px">複製 Claude 分析 Prompt</button>
-                <button class="gc-btn gc-ser-link" style="font-size:11px">查看系列偵測</button>
-              </div></div>
-          </div>`;
-          td.querySelector('.gc-cp-name').onclick=()=>{navigator.clipboard?.writeText(g.name);toast('已複製：'+g.name);};
-          td.querySelector('.gc-cp-prompt').onclick=()=>{
-            const pt='請分析以下 slot 遊戲：「'+g.name+'」（廠商：'+(g.provider||'?')+'，年份：'+(g.year||'?')+'）\\n機制：'+((g.mechanics||[]).join('、')||'未知')+'\\nRTP：'+(g.rtp||'?')+'，最高倍率：'+(g.max_win?g.max_win+'x':'?');
-            navigator.clipboard?.writeText(pt);toast('已複製分析 Prompt');
-          };
-          td.querySelector('.gc-ser-link').onclick=()=>{if(window.srGoToSeries){window.srGoToSeries(g.series_group||'');}else{const b=qs('[data-s="series"]');if(b)b.click();toast('已切換到系列研究 / 換皮判斷');}};
-          dr.appendChild(td);tr.insertAdjacentElement('afterend',dr);
-        }else{
-          const nx=tr.nextElementSibling;if(nx&&nx.classList.contains('gd-drawer'))nx.remove();
-        }
-      };
-      actCell.appendChild(expBtn);
+      // Phase 6A: was an inline-expandable <tr class="gd-drawer"> built here
+      // (depended on this row's own DOM via insertAdjacentElement/
+      // nextElementSibling, so it couldn't be opened from anywhere else).
+      // Now opens the shared Game Detail modal instead — single source of
+      // truth, callable from Monthly Drilldown and any future caller too.
+      const detBtn=mk('button','gc-btn');detBtn.textContent='詳情';detBtn.style.cssText='margin-left:4px;font-size:11px;padding:2px 6px';
+      detBtn.onclick=e=>{e.stopPropagation();window.openGameDetail(g.id);};
+      actCell.appendChild(detBtn);
       tb.appendChild(tr);
     });
 
@@ -5915,7 +5974,8 @@ function formatMechanicsForPrompt(game){
 (function(){
   const s=qs('#s-monthly');
   const MD=D.monthly||{months:[],by_month:{}};
-  const GAME_BY_ID={};D.games.forEach(g=>{GAME_BY_ID[g.id]=g;});
+  // GAME_BY_ID is now the global, site-wide lookup (Phase 6A) — this used to
+  // build its own private copy here.
   const MIN_MONTH_SAMPLE=30;  // below this, mechanic/theme % is flagged unreliable (see report)
   const MIN_TAG_SUPPORT=5;    // current, or current+previous, games before a mechanic/theme counts as a trend
 
@@ -6297,6 +6357,13 @@ function formatMechanicsForPrompt(game){
         else wlShowAddModal(g,ok=>{if(ok){addBtn.textContent='✓ 已加入';addBtn.classList.add('added');}},{added_reason:`Trend Drilldown：${entityName}（${month}）`,research_goal:['競品分析']});
       };
       right.appendChild(addBtn);
+      // Phase 6A: low-risk hookup into the now-shared Game Detail — this
+      // used to be source-link-only (Phase 5A.7 had no shared detail API to
+      // call). Doesn't touch membership/count logic above.
+      const detBtn=mk('button','gc-btn');detBtn.style.cssText='font-size:10px;padding:2px 6px';
+      detBtn.textContent='Game Detail';
+      detBtn.onclick=()=>window.openGameDetail(g.id);
+      right.appendChild(detBtn);
       row.append(left,right);
       list.appendChild(row);
     });
