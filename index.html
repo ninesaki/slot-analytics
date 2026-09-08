@@ -153,7 +153,87 @@ function buildGameDetailBody(g){
           ?'<div style="font-size:10px;color:var(--txd)">分享連結僅支援已部署的網頁版（GitHub Pages）</div>'
           :'<button class="gc-btn" id="gdm-cp-link" style="font-size:11px">複製遊戲連結</button>'}
       </div></div>
-  </div>`;
+  </div>
+  <div id="gdm-media-section" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--bd)"></div>`;
+}
+// Phase 7B: research media (screenshots) — on-demand only, never part of
+// D.games/data.js. See GAME_MEDIA_ARCHITECTURE.md for the full design.
+const MEDIA_TYPE_LABELS={main:'主畫面',feature:'Feature',bonus:'Bonus',paytable:'Paytable',rules:'規則頁',other:'其他'};
+// Race-condition guard (report section 十五): each openGameDetail() call
+// gets a new token; a media fetch only renders if its token still matches
+// the latest one when it resolves. Belt-and-suspenders — `modal` is also
+// captured per-call via closure below, so a stale fetch can only ever touch
+// its OWN (by then possibly detached/closed) modal, never a newer one; the
+// token makes that safety property explicit and robust against future
+// refactors, not just an accidental consequence of the current closure shape.
+let _mediaRequestToken=0;
+function renderGameMedia(sec,items){
+  sec.innerHTML='<div class="gd-drawer-label" style="margin-bottom:8px">研究圖片</div>';
+  const grid=mk('div','');grid.style.cssText='display:flex;flex-wrap:wrap;gap:10px';
+  items.forEach(item=>{
+    const card=mk('div','');card.style.cssText='width:140px';
+    const thumb=document.createElement('img');
+    thumb.src=item.url;thumb.loading='lazy';thumb.alt=item.caption||item.type||'';
+    thumb.style.cssText='width:140px;height:80px;object-fit:cover;cursor:pointer;border:1px solid var(--bd);display:block';
+    thumb.onclick=()=>openMediaLightbox(item);
+    // Broken image (e.g. object deleted from R2 after this json was built)
+    // → hide this one card silently, never a broken-image icon (report 十九).
+    thumb.onerror=()=>{card.style.display='none';};
+    card.appendChild(thumb);
+    const meta=mk('div','');meta.style.cssText='font-size:10px;color:var(--txd);margin-top:3px;line-height:1.4';
+    meta.innerHTML=`<span class="tag" style="font-size:9px;padding:1px 5px">${MEDIA_TYPE_LABELS[item.type]||item.type||'other'}</span>`+(item.caption?`<div>${item.caption}</div>`:'');
+    card.appendChild(meta);
+    grid.appendChild(card);
+  });
+  sec.appendChild(grid);
+}
+function openMediaLightbox(item){
+  // Deliberately NOT a .wl-modal — a single lightweight full-screen overlay
+  // with one obvious dismiss action (click anywhere, Escape), so opening it
+  // on top of the already-open Game Detail modal never becomes a confusing
+  // modal-stack (report section 十七).
+  const box=mk('div','');
+  box.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:20px;box-sizing:border-box';
+  const img=document.createElement('img');
+  img.src=item.url;img.alt=item.caption||'';
+  img.style.cssText='max-width:90vw;max-height:80vh;object-fit:contain;cursor:default';
+  img.onclick=e=>e.stopPropagation();
+  box.appendChild(img);
+  let capHtml=item.caption?String(item.caption):'';
+  if(item.source_url)capHtml+=(capHtml?' · ':'')+`<a href="${item.source_url}" target="_blank" rel="noopener noreferrer" style="color:#7ecfb3" onclick="event.stopPropagation()">查看來源</a>`;
+  if(capHtml){
+    const capRow=mk('div','');capRow.style.cssText='color:#fff;font-size:13px;margin-top:12px;text-align:center;max-width:90vw';
+    capRow.innerHTML=capHtml;
+    box.appendChild(capRow);
+  }
+  function close(){box.remove();document.removeEventListener('keydown',escHandler);}
+  function escHandler(e){if(e.key==='Escape')close();}
+  box.onclick=close;
+  document.addEventListener('keydown',escHandler);
+  document.body.appendChild(box);
+}
+function loadGameMedia(gameId,modal,token){
+  const sec=modal.querySelector('#gdm-media-section');
+  if(!sec)return;
+  // Phase 7B report section 十九/三十一: single-file dashboard.html has no
+  // server to fetch a relative media/{id}.json from — file:// fetches of
+  // sibling files are blocked by browsers' local-file security policy.
+  // Rather than let every game silently 404/fail (indistinguishable from
+  // "no media" to the user) don't even try; say plainly why once.
+  if(location.protocol==='file:'){
+    sec.style.display='block';
+    sec.innerHTML='<div style="font-size:11px;color:var(--txd)">研究圖片僅支援網頁版</div>';
+    return;
+  }
+  fetch('media/'+encodeURIComponent(gameId)+'.json')
+    .then(r=>r.ok?r.json():null)
+    .then(items=>{
+      if(token!==_mediaRequestToken)return;      // a newer game opened meanwhile — discard
+      if(!items||!items.length)return;           // no media at all → section stays hidden, no empty block
+      renderGameMedia(sec,items);
+      sec.style.display='block';
+    })
+    .catch(()=>{});  // 404 / network / malformed json — all treated as "no media", never console.error
 }
 // Phase 6D: sync the open game into the URL as ?game={id} (preserving any
 // other existing query params) via history.replaceState — deliberately
@@ -213,6 +293,10 @@ window.openGameDetail=function(gameId){
   modal.querySelector('#gdm-close').onclick=closeModal;
   ov.appendChild(modal);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)closeModal();});
+  // Phase 7B: research media loads after everything above is already
+  // visible — never blocks/delays the rest of Game Detail.
+  _mediaRequestToken++;
+  loadGameMedia(g.id,modal,_mediaRequestToken);
 };
 // Phase 6D: direct-load — if the page was opened with ?game=123, auto-open
 // that game's shared Game Detail. openGameDetail's own `if(!g)` guard
