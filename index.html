@@ -149,12 +149,36 @@ function buildGameDetailBody(g){
         <button class="gc-btn" id="gdm-cp-name" style="font-size:11px">複製遊戲名稱</button>
         <button class="gc-btn" id="gdm-cp-prompt" style="font-size:11px">複製 Claude 分析 Prompt</button>
         <button class="gc-btn" id="gdm-ser-link" style="font-size:11px">查看系列偵測</button>
+        ${location.protocol==='file:'
+          ?'<div style="font-size:10px;color:var(--txd)">分享連結僅支援已部署的網頁版（GitHub Pages）</div>'
+          :'<button class="gc-btn" id="gdm-cp-link" style="font-size:11px">複製遊戲連結</button>'}
       </div></div>
   </div>`;
+}
+// Phase 6D: sync the open game into the URL as ?game={id} (preserving any
+// other existing query params) via history.replaceState — deliberately
+// replace, not push, so opening/closing games never pollutes browser
+// history with one entry per game (see report section 七).
+function setGameUrlParam(id){
+  try{
+    const url=new URL(location.href);
+    url.searchParams.set('game',String(id));
+    history.replaceState(null,'',url);
+  }catch(e){}
+}
+function clearGameUrlParam(){
+  try{
+    const url=new URL(location.href);
+    if(!url.searchParams.has('game'))return;
+    url.searchParams.delete('game');
+    const qs=url.searchParams.toString();
+    history.replaceState(null,'',url.pathname+(qs?'?'+qs:'')+url.hash);
+  }catch(e){}
 }
 window.openGameDetail=function(gameId){
   const g=GAME_BY_ID[gameId];
   if(!g){toast('找不到這款遊戲資料',false);return;}
+  setGameUrlParam(g.id);
   const ov=mk('div','wl-modal-overlay');
   const modal=mk('div','wl-modal');
   modal.style.width='620px';
@@ -166,13 +190,18 @@ window.openGameDetail=function(gameId){
       <button id="gdm-wl" class="wl-add${wlHas(g.name)?' added':''}" style="flex:1;padding:8px">${wlHas(g.name)?'✓ 已加入 Watchlist':'加入 Watchlist'}</button>
       <button id="gdm-close" style="flex:1;padding:8px;background:none;border:1px solid var(--bd);color:var(--txd);font-family:inherit;font-size:13px;cursor:pointer">關閉</button>
     </div>`;
+  function closeModal(){clearGameUrlParam();ov.remove();}
   modal.querySelector('#gdm-cp-name').onclick=()=>{navigator.clipboard?.writeText(g.name);toast('已複製：'+g.name);};
   modal.querySelector('#gdm-cp-prompt').onclick=()=>{
     const pt='請分析以下 slot 遊戲：「'+g.name+'」（廠商：'+(g.provider||'?')+'，年份：'+(g.year||'?')+'）\\n機制：'+((g.mechanics||[]).join('、')||'未知')+'\\nRTP：'+(g.rtp||'?')+'，最高倍率：'+(g.max_win?g.max_win+'x':'?');
     navigator.clipboard?.writeText(pt);toast('已複製分析 Prompt');
   };
+  const cpLinkBtn=modal.querySelector('#gdm-cp-link');
+  if(cpLinkBtn)cpLinkBtn.onclick=()=>{
+    navigator.clipboard?.writeText(location.href).then(()=>toast('已複製遊戲連結'),()=>toast('複製失敗，請再試一次',false));
+  };
   modal.querySelector('#gdm-ser-link').onclick=()=>{
-    ov.remove();
+    closeModal();
     if(window.srGoToSeries){window.srGoToSeries(g.series_group||g.name||'');}
     else{const b=qs('[data-s="series"]');if(b)b.click();toast('已切換到系列研究 / 換皮判斷');}
   };
@@ -181,10 +210,29 @@ window.openGameDetail=function(gameId){
     if(wlHas(g.name)){wlRemove(g.name);wlBtn.textContent='加入 Watchlist';wlBtn.classList.remove('added');}
     else wlShowAddModal(g,ok=>{if(ok){wlBtn.textContent='✓ 已加入 Watchlist';wlBtn.classList.add('added');}});
   };
-  modal.querySelector('#gdm-close').onclick=()=>ov.remove();
+  modal.querySelector('#gdm-close').onclick=closeModal;
   ov.appendChild(modal);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  ov.addEventListener('click',e=>{if(e.target===ov)closeModal();});
 };
+// Phase 6D: direct-load — if the page was opened with ?game=123, auto-open
+// that game's shared Game Detail. openGameDetail's own `if(!g)` guard
+// already covers every invalid case (non-existent id, "abc", negative) with
+// the existing toast, so this stays a one-liner rather than duplicating
+// that validation. An empty `?game=` is falsy and simply skipped — no game
+// was actually specified, so no error toast is warranted, but no crash
+// happens either. Does not touch nav/section state — the default page
+// loads normally underneath, per report section 十一.
+// Deferred via setTimeout(...,0) rather than called inline here: this runs
+// very early in the script (right after openGameDetail's own definition),
+// long before later top-level `let`/`const` sections (e.g. `let WL=[]`)
+// have executed — openGameDetail's modal-building code reads those, so
+// calling it synchronously at this point throws "Cannot access 'WL' before
+// initialization". Deferring to the next tick lets the rest of this
+// (synchronous, single) script finish running first.
+setTimeout(function(){
+  const gid=new URLSearchParams(location.search).get('game');
+  if(gid)window.openGameDetail(gid);
+},0);
 
 // ── Top 3 快速洞察 ────────────────────────────────────────────────────────────
 const RANK_COLORS=['#f0a500','#7a8eab','#9b7ef8'];
