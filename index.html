@@ -6007,6 +6007,138 @@ function formatMechanicsForPrompt(game){
   }
   function scoreNum100(v){if(v==null)return null;const n=Number(v);if(!Number.isFinite(n))return null;return n<=10?n*10:n;}
 
+  // Phase 5A.5: Markdown export helpers. Priority CGN/SC/BWB per report;
+  // only existing fields, never a guessed URL.
+  function bestSourceUrl(g){return g.cgn_url||g.sc_url||g.bwb_url||null;}
+  function mdGameLine(g,extra){
+    const url=bestSourceUrl(g);
+    const label=url?`[${g.name}](${url})`:g.name;
+    const prov=g.provider_normalized||g.provider_raw||'';
+    return `- ${label}（${prov}）${extra?' — '+extra:''}`;
+  }
+  function mdDeltaTable(rows){
+    if(!rows.length)return'_無明顯變化_';
+    let out='| 項目 | 上月 | 本月 | Δ |\n|---|---:|---:|---:|\n';
+    rows.forEach(r=>{out+=`| ${r.name} | ${r.prevPct.toFixed(0)}% | ${r.curPct.toFixed(0)}% | ${r.deltaPp>0?'+':''}${r.deltaPp.toFixed(1)}pp |\n`;});
+    return out.trim();
+  }
+  function mdTopTable(rows){
+    if(!rows.length)return'_本月無足夠資料_';
+    let out='| 項目 | 本月使用率 |\n|---|---:|\n';
+    rows.forEach(r=>{out+=`| ${r.name} | ${r.curPct.toFixed(0)}%（${r.c} 款） |\n`;});
+    return out.trim();
+  }
+  // Mirrors trendBlock()'s reliability gating exactly (same tiers, same
+  // "low never shows a ranked delta" rule) so export can never show a
+  // trend the UI itself would have suppressed.
+  function mdTrendSection(tier,pmd,growingRows,decliningRows,topRows){
+    if(!pmd)return'_無足夠前月資料，僅顯示本月排行_\n\n'+mdTopTable(topRows);
+    if(tier==='low'){
+      return '資料不足，暫不判定趨勢。\n\n- 僅列目前使用分布，不作 Growing / Declining 判定。\n\n'+mdTopTable(topRows);
+    }
+    const warn=tier==='medium'?'> ⚠ Coverage 中等，趨勢僅供參考\n\n':'';
+    return `${warn}### Growing\n\n${mdDeltaTable(growingRows)}\n\n### Declining\n\n${mdDeltaTable(decliningRows)}`;
+  }
+  function buildMonthlyMarkdown(vm){
+    const lines=[];
+    const push=x=>lines.push(x);
+    push(`# Slot Analytics｜${vm.monthKey} 月度競品分析`);
+    push('');
+    const statusLine=vm.status==='ongoing'?'進行中，本月尚未結束':vm.status==='future'?'預告 / 未完整月份，僅供參考':'完整月份';
+    push(`> 狀態：${statusLine}`);
+    push(`> 比較基準：${vm.pmd?vm.pmKey:'無足夠前月資料'}`);
+    push(`> 資料可信度：Mechanics ${vm.curMechPct.toFixed(0)}% / Themes ${vm.curThemePct.toFixed(0)}%`);
+    push('');
+    push('## 月度總覽');
+    push('');
+    push(`- 本月發行遊戲數：${vm.total}${vm.pmd?`（上月 ${vm.pgs.length}，${fmtDelta(vm.total,vm.pgs.length)}）`:''}`);
+    push(`- 活躍 Provider 數：${vm.activeProviders}${vm.pActiveProviders!=null?`（上月 ${vm.pActiveProviders}，${fmtDelta(vm.activeProviders,vm.pActiveProviders)}）`:''}`);
+    push(`- 平均綜合分：${vm.md.avg_score??'—'}${(vm.pmd&&vm.pmd.avg_score!=null)?`（上月 ${vm.pmd.avg_score}，${fmtDelta(vm.md.avg_score,vm.pmd.avg_score,{decimal:true})}）`:''}`);
+    push(`- 有系列關聯遊戲數：${vm.seriesLinked}${vm.pSeriesLinked!=null?`（上月 ${vm.pSeriesLinked}，${fmtDelta(vm.seriesLinked,vm.pSeriesLinked)}）`:''}`);
+    push('');
+    push('## Provider Activity');
+    push('');
+    if(vm.provRows.length){
+      push('| Provider | 本月新作 | 上月 | Δ | 平均分 |');
+      push('|---|---:|---:|---:|---:|');
+      vm.provRows.forEach(r=>{
+        const diff=r.diff==null?'—':(r.diff>0?'+':'')+r.diff;
+        push(`| ${r.name} | ${r.cur} | ${r.prev??'—'} | ${diff} | ${r.avgS!=null?r.avgS.toFixed(1):'—'} |`);
+      });
+    } else push('_無足夠資料_');
+    push('');
+    push('## Mechanic Trends');
+    push('');
+    push(mdTrendSection(vm.mechTier,vm.pmd,vm.growingMech,vm.decliningMech,vm.topMechByPen));
+    push('');
+    push('## Theme Trends');
+    push('');
+    push(mdTrendSection(vm.themeTier,vm.pmd,vm.growingTheme,vm.decliningTheme,vm.topThemeByPen));
+    push('');
+    push('## Notable Games');
+    push('');
+    push('### Top Rated');
+    push('');
+    if(vm.topRated.length)vm.topRated.forEach(g=>push(mdGameLine(g,g.score.toFixed(0)+' 分')));
+    else push('_本月無評分資料_');
+    push('');
+    push('### Score Disagreement');
+    push('');
+    if(vm.disagreement.length)vm.disagreement.forEach(x=>push(mdGameLine(x.g,'差異 Δ'+x.gap.toFixed(0))));
+    else push('_本月無明顯評分分歧_');
+    push('');
+    push('### Mechanic Outlier');
+    push('');
+    if(vm.mechOutliers.length)vm.mechOutliers.forEach(g=>push(mdGameLine(g)));
+    else push('_本月無機制離群遊戲_');
+    push('');
+    push('## Series / Reskin Activity');
+    push('');
+    if(!vm.hasSRD){
+      push('_系列研究資料尚未載入_');
+    } else {
+      push('**新系列（本月首次出現）**');
+      push('');
+      if(vm.newSeries.length)vm.newSeries.forEach(r=>push(`- ${r.sn}（${r.count} 款）`));
+      else push('_本月無新系列_');
+      push('');
+      push('**系列續作**');
+      push('');
+      if(vm.continuedSeries.length)vm.continuedSeries.forEach(r=>push(`- ${r.sn}（${r.count} 款）`));
+      else push('_本月無系列續作_');
+      push('');
+      push('**疑似換皮**');
+      push('');
+      if(vm.reskinThisMonth.length)vm.reskinThisMonth.forEach(g=>push(mdGameLine(g,g.seriesName)));
+      else push('_本月無疑似換皮_');
+      push('');
+      push('**同系列集中發行（同月 ≥2 款）**');
+      push('');
+      if(vm.concentrated.length)vm.concentrated.forEach(r=>push(`- ${r.sn}（${r.count} 款）`));
+      else push('_本月無集中發行系列_');
+    }
+    push('');
+    push('## Emerging / Watchlist');
+    push('');
+    push('**本月值得關注 Provider**');
+    push('');
+    if(!vm.hasRD)push('_新興廠商雷達資料尚未載入_');
+    else if(vm.notableProviders.length)vm.notableProviders.slice(0,8).forEach(p=>push(`- ${p.name}（${vm.md.provider_counts[p.name]||0} 款本月）`));
+    else push('_本月無新興廠商雷達候選有發行_');
+    push('');
+    push('**本月值得研究 Game（研究工作台）**');
+    push('');
+    if(vm.notableGames.length)vm.notableGames.slice(0,8).forEach(g=>push(mdGameLine(g)));
+    else push('_研究工作台中無本月發行遊戲_');
+    push('');
+    push('## 資料品質');
+    push('');
+    push(`- Mechanics Coverage：${vm.curMechPct.toFixed(0)}%（${vm.md.mechanic_denom}/${vm.total}）`);
+    push(`- Theme Coverage：${vm.curThemePct.toFixed(0)}%（${vm.md.theme_denom}/${vm.total}）`);
+    push(`- Score Coverage：${(vm.md.score_count/vm.total*100).toFixed(0)}%（${vm.md.score_count}/${vm.total}）`);
+    return lines.join('\n');
+  }
+
   // Phase 5A.1: coverage-based trend reliability. Thresholds (≥80% high,
   // 50–79% medium, <50% low) were chosen from the actual last-36-month
   // coverage distribution (see report), not guessed — mechanic coverage's
@@ -6063,6 +6195,39 @@ function formatMechanicsForPrompt(game){
     monthSel.appendChild(opt);
   });
   selRow.appendChild(monthSel);
+
+  // Phase 5A.5: export buttons reuse the same computeMonthlyViewModel()
+  // result render() uses — no separate scoring/trend logic, no data ever
+  // shown here that the UI itself wouldn't show for this month.
+  const copyBtn=mk('button','');
+  copyBtn.textContent='複製 Markdown';
+  copyBtn.style.cssText='padding:6px 12px;background:none;border:1px solid var(--bd);color:var(--tx);font-family:inherit;font-size:12px;cursor:pointer';
+  copyBtn.onclick=async()=>{
+    try{
+      const md=buildMonthlyMarkdown(computeMonthlyViewModel(selectedMonth));
+      await navigator.clipboard.writeText(md);
+      toast('已複製 Markdown');
+    }catch(e){
+      toast('複製失敗，請再試一次',false);
+    }
+  };
+  selRow.appendChild(copyBtn);
+
+  const downloadBtn=mk('button','');
+  downloadBtn.textContent='下載 .md';
+  downloadBtn.style.cssText='padding:6px 12px;background:none;border:1px solid var(--bd);color:var(--tx);font-family:inherit;font-size:12px;cursor:pointer';
+  downloadBtn.onclick=()=>{
+    const md=buildMonthlyMarkdown(computeMonthlyViewModel(selectedMonth));
+    const blob=new Blob([md],{type:'text/markdown;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=`slot-analytics-${selectedMonth}.md`;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('已下載 Markdown 檔案');
+  };
+  selRow.appendChild(downloadBtn);
+
   const coverageNote=mk('div','');coverageNote.style.cssText='margin-left:auto;font-size:12px;color:var(--txd)';
   selRow.appendChild(coverageNote);
   s.appendChild(selRow);
@@ -6070,52 +6235,27 @@ function formatMechanicsForPrompt(game){
   const body=mk('div','');s.appendChild(body);
   monthSel.addEventListener('change',()=>{selectedMonth=monthSel.value;render();});
 
-  function render(){
-    body.innerHTML='';
-    const md=MD.by_month[selectedMonth];
-    const gs=monthGames(selectedMonth);
+  // Phase 5A.5: all data computation lives here, shared by render() (HTML)
+  // and buildMonthlyMarkdown() (export) — neither re-derives or re-scores
+  // anything; both just format the same vm differently.
+  function computeMonthlyViewModel(monthKey){
+    const md=MD.by_month[monthKey];
+    const gs=monthGames(monthKey);
     const total=gs.length;
     const monthIdSet=new Set(md.game_ids);
-    const pmKey=prevMonthKey(selectedMonth);
+    const pmKey=prevMonthKey(monthKey);
     const pmd=MD.by_month[pmKey];
     const pgs=pmd?monthGames(pmKey):[];
 
     const curMechPct=md.mechanic_denom/total*100,curThemePct=md.theme_denom/total*100;
     const prevMechPct=(pmd&&pgs.length)?pmd.mechanic_denom/pgs.length*100:null;
     const prevThemePct=(pmd&&pgs.length)?pmd.theme_denom/pgs.length*100:null;
-    coverageNote.innerHTML=`資料可信度 — ${coverageBadge('機制',curMechPct)} · ${coverageBadge('題材',curThemePct)} · <span style="color:var(--txd)">評分 ${md.score_count}/${total} (${(md.score_count/total*100).toFixed(0)}%)</span>`;
 
-    if(total<MIN_MONTH_SAMPLE){
-      const warn=mk('div','card');
-      warn.style.cssText='margin-bottom:16px;border-left:3px solid var(--am);color:var(--am)';
-      warn.textContent=`⚠ 本月樣本僅 ${total} 款，趨勢僅供參考（低於最低樣本門檻 ${MIN_MONTH_SAMPLE} 款）`;
-      body.appendChild(warn);
-    }
-
-    // ── Section A: Monthly Overview ────────────────────────────────────────
-    const secA=mk('div','card');secA.style.marginBottom='16px';
     const activeProviders=Object.keys(md.provider_counts).length;
     const seriesLinked=gs.filter(g=>getSeriesIdSet().has(g.id)).length;
     const pActiveProviders=pmd?Object.keys(pmd.provider_counts).length:null;
     const pSeriesLinked=pmd?pgs.filter(g=>getSeriesIdSet().has(g.id)).length:null;
-    function statBlock(label,val,pval,opts){
-      const isNum=typeof val==='number';
-      const d=(isNum&&pval!=null)?val-pval:null;
-      const deltaTxt=d!=null?`<span style="color:${deltaColor(d)};font-size:12px;margin-left:6px">${fmtDelta(val,pval,opts)}</span>`:'';
-      return `<div><div style="font-size:12px;color:var(--txd)">${label}</div><div style="font-size:28px;font-weight:700">${isNum?val:(val??'—')}${deltaTxt}</div></div>`;
-    }
-    secA.innerHTML=`<div class="ct">${selectedMonth} 月度總覽${monthStatusBadge(selectedMonth)}</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:12px">
-      ${statBlock('本月發行遊戲數',total,pmd?pgs.length:null)}
-      ${statBlock('活躍 Provider 數',activeProviders,pActiveProviders)}
-      ${statBlock('平均綜合分',md.avg_score,pmd?pmd.avg_score:null,{decimal:true})}
-      ${statBlock('有系列關聯遊戲數',seriesLinked,pSeriesLinked)}
-      </div>
-      ${pmd?'':`<div style="margin-top:10px;font-size:12px;color:var(--txd)">無足夠前月資料（${pmKey}）</div>`}`;
-    body.appendChild(secA);
 
-    // ── Section B: Provider Activity ───────────────────────────────────────
-    const secB=mk('div','card');secB.style.marginBottom='16px';
     const provRows=Object.keys(md.provider_counts).map(p=>{
       const cur=md.provider_counts[p]||0;
       const prev=pmd?(pmd.provider_counts[p]||0):null;
@@ -6123,44 +6263,19 @@ function formatMechanicsForPrompt(game){
       const avgS=scores.length?scores.reduce((a,b)=>a+b,0)/scores.length:null;
       return{name:p,cur,prev,diff:prev!=null?cur-prev:null,avgS};
     }).sort((a,b)=>b.cur-a.cur||a.name.localeCompare(b.name)).slice(0,10);
-    let tbl='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:1px solid var(--bd)"><th style="text-align:left;padding:6px 8px">Provider</th><th style="text-align:right;padding:6px 8px">本月</th><th style="text-align:right;padding:6px 8px">上月</th><th style="text-align:right;padding:6px 8px">差異</th><th style="text-align:right;padding:6px 8px">平均分</th></tr></thead><tbody>';
-    provRows.forEach(r=>{
-      const diffTxt=r.diff==null?'—':(r.diff>0?'+':'')+r.diff;
-      const diffCol=r.diff==null?'var(--txd)':deltaColor(r.diff);
-      tbl+=`<tr style="border-bottom:1px solid var(--bd)"><td style="padding:6px 8px">${r.name}</td><td style="text-align:right;padding:6px 8px">${r.cur}</td><td style="text-align:right;padding:6px 8px;color:var(--txd)">${r.prev??'—'}</td><td style="text-align:right;padding:6px 8px;color:${diffCol}">${diffTxt}</td><td style="text-align:right;padding:6px 8px">${r.avgS!=null?r.avgS.toFixed(1):'—'}</td></tr>`;
-    });
-    tbl+='</tbody></table>';
-    const ongoingNote=monthStatus(selectedMonth)!=='complete'
-      ?`<div style="font-size:12px;color:var(--am);margin-bottom:8px">⚠ ${monthStatus(selectedMonth)==='ongoing'?'本月尚未結束':'本月為未完整月份'}，本月發行數與差異僅為即時統計，非最終月報結果</div>`:'';
-    secB.innerHTML=`<div class="ct">Provider 活躍度（Top 10）</div>${ongoingNote}`;
-    secB.insertAdjacentHTML('beforeend',tbl);
-    body.appendChild(secB);
 
-    // ── Section C: Mechanic Trends ──────────────────────────────────────────
-    const secC=mk('div','card');secC.style.marginBottom='16px';
     const mechRows=penetrationRows(md.mechanic_counts,md.mechanic_denom,pmd?pmd.mechanic_counts:null,pmd?pmd.mechanic_denom:null);
     const growingMech=mechRows.filter(r=>r.deltaPp!=null&&r.deltaPp>0).sort((a,b)=>b.deltaPp-a.deltaPp||a.name.localeCompare(b.name)).slice(0,8);
     const decliningMech=mechRows.filter(r=>r.deltaPp!=null&&r.deltaPp<0).sort((a,b)=>a.deltaPp-b.deltaPp||a.name.localeCompare(b.name)).slice(0,8);
     const topMechByPen=mechRows.slice().sort((a,b)=>b.curPct-a.curPct||a.name.localeCompare(b.name)).slice(0,10);
-    secC.innerHTML=`<div class="ct">玩法機制趨勢 (Mechanic Trends)</div>
-      <div style="font-size:12px;color:var(--txd);margin-bottom:10px">Penetration ＝ 使用該機制的當月遊戲數 ／ 當月有機制資料的遊戲數（${md.mechanic_denom} 款）。最低支持度：當月 ≥${MIN_TAG_SUPPORT} 款，或當月＋上月合計 ≥${MIN_TAG_SUPPORT} 款，避免 1→2 款被誤讀為爆發成長。</div>
-      ${pmd?trendBlock(curMechPct,prevMechPct,growingMech,decliningMech,topMechByPen,'Growing','Declining'):'<div style="font-size:12px;color:var(--txd);margin-bottom:10px">無足夠前月資料，僅顯示本月排行</div>'}`;
-    secC.appendChild(barChart(topMechByPen.map(r=>[r.name,Math.round(r.curPct*10)/10]),{color:'var(--am)',limit:10,pctLabel:true}));
-    body.appendChild(secC);
+    const mechTier=pmd?combinedTier(curMechPct,prevMechPct):null;
 
-    // ── Section D: Theme Trends ─────────────────────────────────────────────
-    const secD=mk('div','card');secD.style.marginBottom='16px';
     const themeRows=penetrationRows(md.theme_counts,md.theme_denom,pmd?pmd.theme_counts:null,pmd?pmd.theme_denom:null);
     const growingTheme=themeRows.filter(r=>r.deltaPp!=null&&r.deltaPp>0).sort((a,b)=>b.deltaPp-a.deltaPp||a.name.localeCompare(b.name)).slice(0,8);
     const decliningTheme=themeRows.filter(r=>r.deltaPp!=null&&r.deltaPp<0).sort((a,b)=>a.deltaPp-b.deltaPp||a.name.localeCompare(b.name)).slice(0,8);
     const topThemeByPen=themeRows.slice().sort((a,b)=>b.curPct-a.curPct||a.name.localeCompare(b.name)).slice(0,10);
-    secD.innerHTML=`<div class="ct">題材趨勢 (Theme Trends)</div>
-      <div style="font-size:12px;color:var(--txd);margin-bottom:10px">計算方式與 Mechanic Trends 相同，沿用現有 Theme 正規化結果（本月有題材資料 ${md.theme_denom} 款）。Theme 資料庫整體覆蓋率僅約 24.5%，多數月份會落在「資料不足」屬正常現象，不代表功能異常。</div>
-      ${pmd?trendBlock(curThemePct,prevThemePct,growingTheme,decliningTheme,topThemeByPen,'Growing Themes','Declining Themes'):'<div style="font-size:12px;color:var(--txd)">無足夠前月資料</div>'}`;
-    body.appendChild(secD);
+    const themeTier=pmd?combinedTier(curThemePct,prevThemePct):null;
 
-    // ── Section E: Notable Games ────────────────────────────────────────────
-    const secE=mk('div','card');secE.style.marginBottom='16px';
     const topRated=gs.filter(g=>g.score!=null).sort((a,b)=>b.score-a.score||a.id-b.id).slice(0,5);
     const disagreement=gs.map(g=>{
       const vals=[scoreNum100(g.cgscore),scoreNum100(g.sc_rating),scoreNum100(g.bwb_rating)].filter(v=>v!=null);
@@ -6181,17 +6296,7 @@ function formatMechanicsForPrompt(game){
         });
       });
     }
-    secE.innerHTML=`<div class="ct">值得研究的遊戲 (Notable Games)</div>
-      <div class="g2" style="margin-top:8px">
-        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">Top Rated</div>${topRated.length?topRated.map(g=>gameChip(g,g.score.toFixed(0))).join(''):'<div style="font-size:12px;color:var(--txd)">本月無評分資料</div>'}</div>
-        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">Score Disagreement（三方差異 ≥25，沿用評分來源解剖定義）</div>${disagreement.length?disagreement.map(x=>gameChip(x.g,'Δ'+x.gap.toFixed(0))).join(''):'<div style="font-size:12px;color:var(--txd)">本月無明顯評分分歧</div>'}</div>
-        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">Mechanic Outlier（採用當月罕見機制，＜${MIN_TAG_SUPPORT} 款）</div>${mechOutliers.length?mechOutliers.map(g=>gameChip(g,'')).join(''):'<div style="font-size:12px;color:var(--txd)">本月無機制離群遊戲</div>'}</div>
-        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">Suspected Reskin / New Series</div>${(reskinThisMonth.length||sequelThisMonth.length)?[...reskinThisMonth.slice(0,3).map(g=>gameChip(g,'疑似換皮 · '+g.seriesName)),...sequelThisMonth.slice(0,3).map(g=>gameChip(g,'系列續作 · '+g.seriesName))].join(''):'<div style="font-size:12px;color:var(--txd)">本月無系列/換皮相關訊號</div>'}</div>
-      </div>`;
-    body.appendChild(secE);
 
-    // ── Section F: Series / Reskin Activity ────────────────────────────────
-    const secF=mk('div','card');secF.style.marginBottom='16px';
     let newSeries=[],continuedSeries=[],concentrated=[];
     if(SRD){
       Object.entries(SRD.SG).forEach(([sn,members])=>{
@@ -6207,18 +6312,7 @@ function formatMechanicsForPrompt(game){
       });
       [newSeries,continuedSeries,concentrated].forEach(arr=>arr.sort((a,b)=>b.count-a.count||a.sn.localeCompare(b.sn)));
     }
-    secF.innerHTML=`<div class="ct">系列 / 換皮動態 (Series / Reskin Activity)</div>
-      <div style="font-size:12px;color:var(--txd);margin-bottom:10px">沿用「系列研究 / 換皮判斷」既有分類結果，不重新計算相似度演算法。</div>
-      <div class="g2">
-        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">新系列（本月首次出現）</div>${SRD?seriesList(newSeries,'本月無新系列'):'<div style="font-size:12px;color:var(--txd)">系列研究資料尚未載入</div>'}</div>
-        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">系列續作</div>${SRD?seriesList(continuedSeries,'本月無系列續作'):''}</div>
-        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">疑似換皮</div>${reskinThisMonth.length?reskinThisMonth.slice(0,6).map(g=>gameChip(g,g.seriesName)).join(''):'<div style="font-size:12px;color:var(--txd)">本月無疑似換皮</div>'}</div>
-        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">同系列集中發行（同月 ≥2 款）</div>${SRD?seriesList(concentrated,'本月無集中發行系列'):''}</div>
-      </div>`;
-    body.appendChild(secF);
 
-    // ── Section G: Emerging / Watchlist ─────────────────────────────────────
-    const secG=mk('div','card');
     const RD=window.RADAR_DATA;
     let notableProviders=[];
     if(RD){
@@ -6230,11 +6324,112 @@ function formatMechanicsForPrompt(game){
       notableProviders.sort((a,b)=>(b.prio?.score||b.recent||0)-(a.prio?.score||a.recent||0)||a.name.localeCompare(b.name));
     }
     const notableGames=WL.filter(g=>monthIdSet.has(g.id)).sort((a,b)=>a.name.localeCompare(b.name));
+
+    return {
+      monthKey, md, gs, total, monthIdSet, pmKey, pmd, pgs,
+      status:monthStatus(monthKey),
+      curMechPct, prevMechPct, curThemePct, prevThemePct, mechTier, themeTier,
+      activeProviders, seriesLinked, pActiveProviders, pSeriesLinked,
+      provRows, mechRows, growingMech, decliningMech, topMechByPen,
+      themeRows, growingTheme, decliningTheme, topThemeByPen,
+      topRated, disagreement, mechOutliers, reskinThisMonth, sequelThisMonth,
+      newSeries, continuedSeries, concentrated,
+      hasSRD:!!SRD, hasRD:!!RD, notableProviders, notableGames,
+    };
+  }
+
+  function render(){
+    body.innerHTML='';
+    const vm=computeMonthlyViewModel(selectedMonth);
+    const {md,gs,total,pmd,pmKey}=vm;
+
+    coverageNote.innerHTML=`資料可信度 — ${coverageBadge('機制',vm.curMechPct)} · ${coverageBadge('題材',vm.curThemePct)} · <span style="color:var(--txd)">評分 ${md.score_count}/${total} (${(md.score_count/total*100).toFixed(0)}%)</span>`;
+
+    if(total<MIN_MONTH_SAMPLE){
+      const warn=mk('div','card');
+      warn.style.cssText='margin-bottom:16px;border-left:3px solid var(--am);color:var(--am)';
+      warn.textContent=`⚠ 本月樣本僅 ${total} 款，趨勢僅供參考（低於最低樣本門檻 ${MIN_MONTH_SAMPLE} 款）`;
+      body.appendChild(warn);
+    }
+
+    // ── Section A: Monthly Overview ────────────────────────────────────────
+    const secA=mk('div','card');secA.style.marginBottom='16px';
+    function statBlock(label,val,pval,opts){
+      const isNum=typeof val==='number';
+      const d=(isNum&&pval!=null)?val-pval:null;
+      const deltaTxt=d!=null?`<span style="color:${deltaColor(d)};font-size:12px;margin-left:6px">${fmtDelta(val,pval,opts)}</span>`:'';
+      return `<div><div style="font-size:12px;color:var(--txd)">${label}</div><div style="font-size:28px;font-weight:700">${isNum?val:(val??'—')}${deltaTxt}</div></div>`;
+    }
+    secA.innerHTML=`<div class="ct">${selectedMonth} 月度總覽${monthStatusBadge(selectedMonth)}</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:12px">
+      ${statBlock('本月發行遊戲數',total,pmd?vm.pgs.length:null)}
+      ${statBlock('活躍 Provider 數',vm.activeProviders,vm.pActiveProviders)}
+      ${statBlock('平均綜合分',md.avg_score,pmd?pmd.avg_score:null,{decimal:true})}
+      ${statBlock('有系列關聯遊戲數',vm.seriesLinked,vm.pSeriesLinked)}
+      </div>
+      ${pmd?'':`<div style="margin-top:10px;font-size:12px;color:var(--txd)">無足夠前月資料（${pmKey}）</div>`}`;
+    body.appendChild(secA);
+
+    // ── Section B: Provider Activity ───────────────────────────────────────
+    const secB=mk('div','card');secB.style.marginBottom='16px';
+    let tbl='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:1px solid var(--bd)"><th style="text-align:left;padding:6px 8px">Provider</th><th style="text-align:right;padding:6px 8px">本月</th><th style="text-align:right;padding:6px 8px">上月</th><th style="text-align:right;padding:6px 8px">差異</th><th style="text-align:right;padding:6px 8px">平均分</th></tr></thead><tbody>';
+    vm.provRows.forEach(r=>{
+      const diffTxt=r.diff==null?'—':(r.diff>0?'+':'')+r.diff;
+      const diffCol=r.diff==null?'var(--txd)':deltaColor(r.diff);
+      tbl+=`<tr style="border-bottom:1px solid var(--bd)"><td style="padding:6px 8px">${r.name}</td><td style="text-align:right;padding:6px 8px">${r.cur}</td><td style="text-align:right;padding:6px 8px;color:var(--txd)">${r.prev??'—'}</td><td style="text-align:right;padding:6px 8px;color:${diffCol}">${diffTxt}</td><td style="text-align:right;padding:6px 8px">${r.avgS!=null?r.avgS.toFixed(1):'—'}</td></tr>`;
+    });
+    tbl+='</tbody></table>';
+    const ongoingNote=vm.status!=='complete'
+      ?`<div style="font-size:12px;color:var(--am);margin-bottom:8px">⚠ ${vm.status==='ongoing'?'本月尚未結束':'本月為未完整月份'}，本月發行數與差異僅為即時統計，非最終月報結果</div>`:'';
+    secB.innerHTML=`<div class="ct">Provider 活躍度（Top 10）</div>${ongoingNote}`;
+    secB.insertAdjacentHTML('beforeend',tbl);
+    body.appendChild(secB);
+
+    // ── Section C: Mechanic Trends ──────────────────────────────────────────
+    const secC=mk('div','card');secC.style.marginBottom='16px';
+    secC.innerHTML=`<div class="ct">玩法機制趨勢 (Mechanic Trends)</div>
+      <div style="font-size:12px;color:var(--txd);margin-bottom:10px">Penetration ＝ 使用該機制的當月遊戲數 ／ 當月有機制資料的遊戲數（${md.mechanic_denom} 款）。最低支持度：當月 ≥${MIN_TAG_SUPPORT} 款，或當月＋上月合計 ≥${MIN_TAG_SUPPORT} 款，避免 1→2 款被誤讀為爆發成長。</div>
+      ${pmd?trendBlock(vm.curMechPct,vm.prevMechPct,vm.growingMech,vm.decliningMech,vm.topMechByPen,'Growing','Declining'):'<div style="font-size:12px;color:var(--txd);margin-bottom:10px">無足夠前月資料，僅顯示本月排行</div>'}`;
+    secC.appendChild(barChart(vm.topMechByPen.map(r=>[r.name,Math.round(r.curPct*10)/10]),{color:'var(--am)',limit:10,pctLabel:true}));
+    body.appendChild(secC);
+
+    // ── Section D: Theme Trends ─────────────────────────────────────────────
+    const secD=mk('div','card');secD.style.marginBottom='16px';
+    secD.innerHTML=`<div class="ct">題材趨勢 (Theme Trends)</div>
+      <div style="font-size:12px;color:var(--txd);margin-bottom:10px">計算方式與 Mechanic Trends 相同，沿用現有 Theme 正規化結果（本月有題材資料 ${md.theme_denom} 款）。Theme 資料庫整體覆蓋率僅約 24.5%，多數月份會落在「資料不足」屬正常現象，不代表功能異常。</div>
+      ${pmd?trendBlock(vm.curThemePct,vm.prevThemePct,vm.growingTheme,vm.decliningTheme,vm.topThemeByPen,'Growing Themes','Declining Themes'):'<div style="font-size:12px;color:var(--txd)">無足夠前月資料</div>'}`;
+    body.appendChild(secD);
+
+    // ── Section E: Notable Games ────────────────────────────────────────────
+    const secE=mk('div','card');secE.style.marginBottom='16px';
+    secE.innerHTML=`<div class="ct">值得研究的遊戲 (Notable Games)</div>
+      <div class="g2" style="margin-top:8px">
+        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">Top Rated</div>${vm.topRated.length?vm.topRated.map(g=>gameChip(g,g.score.toFixed(0))).join(''):'<div style="font-size:12px;color:var(--txd)">本月無評分資料</div>'}</div>
+        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">Score Disagreement（三方差異 ≥25，沿用評分來源解剖定義）</div>${vm.disagreement.length?vm.disagreement.map(x=>gameChip(x.g,'Δ'+x.gap.toFixed(0))).join(''):'<div style="font-size:12px;color:var(--txd)">本月無明顯評分分歧</div>'}</div>
+        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">Mechanic Outlier（採用當月罕見機制，＜${MIN_TAG_SUPPORT} 款）</div>${vm.mechOutliers.length?vm.mechOutliers.map(g=>gameChip(g,'')).join(''):'<div style="font-size:12px;color:var(--txd)">本月無機制離群遊戲</div>'}</div>
+        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">Suspected Reskin / New Series</div>${(vm.reskinThisMonth.length||vm.sequelThisMonth.length)?[...vm.reskinThisMonth.slice(0,3).map(g=>gameChip(g,'疑似換皮 · '+g.seriesName)),...vm.sequelThisMonth.slice(0,3).map(g=>gameChip(g,'系列續作 · '+g.seriesName))].join(''):'<div style="font-size:12px;color:var(--txd)">本月無系列/換皮相關訊號</div>'}</div>
+      </div>`;
+    body.appendChild(secE);
+
+    // ── Section F: Series / Reskin Activity ────────────────────────────────
+    const secF=mk('div','card');secF.style.marginBottom='16px';
+    secF.innerHTML=`<div class="ct">系列 / 換皮動態 (Series / Reskin Activity)</div>
+      <div style="font-size:12px;color:var(--txd);margin-bottom:10px">沿用「系列研究 / 換皮判斷」既有分類結果，不重新計算相似度演算法。</div>
+      <div class="g2">
+        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">新系列（本月首次出現）</div>${vm.hasSRD?seriesList(vm.newSeries,'本月無新系列'):'<div style="font-size:12px;color:var(--txd)">系列研究資料尚未載入</div>'}</div>
+        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">系列續作</div>${vm.hasSRD?seriesList(vm.continuedSeries,'本月無系列續作'):''}</div>
+        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">疑似換皮</div>${vm.reskinThisMonth.length?vm.reskinThisMonth.slice(0,6).map(g=>gameChip(g,g.seriesName)).join(''):'<div style="font-size:12px;color:var(--txd)">本月無疑似換皮</div>'}</div>
+        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">同系列集中發行（同月 ≥2 款）</div>${vm.hasSRD?seriesList(vm.concentrated,'本月無集中發行系列'):''}</div>
+      </div>`;
+    body.appendChild(secF);
+
+    // ── Section G: Emerging / Watchlist ─────────────────────────────────────
+    const secG=mk('div','card');
     secG.innerHTML=`<div class="ct">值得追蹤 (Emerging / Watchlist)</div>
       <div style="font-size:12px;color:var(--txd);margin-bottom:10px">「值得關注」沿用新興廠商雷達既有規則分類結果；「值得研究」為目前研究工作台中，本月發行的遊戲。</div>
       <div class="g2">
-        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">本月值得關注 Provider</div>${RD?(notableProviders.length?notableProviders.slice(0,8).map(p=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:13px"><span>${p.name}</span><span style="color:var(--txd)">${md.provider_counts[p.name]||0} 款本月</span></div>`).join(''):'<div style="font-size:12px;color:var(--txd)">本月無新興廠商雷達候選有發行</div>'):'<div style="font-size:12px;color:var(--txd)">新興廠商雷達資料尚未載入</div>'}</div>
-        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">本月值得研究 Game（研究工作台）</div>${notableGames.length?notableGames.slice(0,8).map(g=>gameChip(g,'')).join(''):'<div style="font-size:12px;color:var(--txd)">研究工作台中無本月發行遊戲</div>'}</div>
+        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">本月值得關注 Provider</div>${vm.hasRD?(vm.notableProviders.length?vm.notableProviders.slice(0,8).map(p=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:13px"><span>${p.name}</span><span style="color:var(--txd)">${md.provider_counts[p.name]||0} 款本月</span></div>`).join(''):'<div style="font-size:12px;color:var(--txd)">本月無新興廠商雷達候選有發行</div>'):'<div style="font-size:12px;color:var(--txd)">新興廠商雷達資料尚未載入</div>'}</div>
+        <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">本月值得研究 Game（研究工作台）</div>${vm.notableGames.length?vm.notableGames.slice(0,8).map(g=>gameChip(g,'')).join(''):'<div style="font-size:12px;color:var(--txd)">研究工作台中無本月發行遊戲</div>'}</div>
       </div>`;
     body.appendChild(secG);
   }
