@@ -6226,6 +6226,82 @@ function formatMechanicsForPrompt(game){
       return{month:mo,exists:!!md2,count,denom,total,penetration,coverage,reliability};
     });
   }
+  // Phase 5A.7: Trend Driver Drilldown — resolves a single 12-month-table row
+  // back to the actual games behind that month's count. Membership must use
+  // the exact same fields build_monthly_data() counted from (see Python:
+  // provider_normalized||provider_raw, mechanics_leaf via set(), themes via
+  // set()) so drilldown.length always equals pt.count — checking presence in
+  // an array gives the same result as checking presence in a Python set,
+  // since neither cares about duplicate occurrences within one game.
+  function driverGames(entityType,entityName,month){
+    const gs=monthGames(month);
+    let filtered;
+    if(entityType==='provider'){
+      filtered=gs.filter(g=>(g.provider_normalized||g.provider_raw||'Unknown')===entityName);
+    }else if(entityType==='mechanic'){
+      filtered=gs.filter(g=>(g.mechanics_leaf||[]).includes(entityName));
+    }else{
+      filtered=gs.filter(g=>(g.themes||[]).includes(entityName));
+    }
+    // Deterministic order: score desc -> release date asc (all tied at the
+    // month level here, since D.games only carries year/month precision) ->
+    // name asc -> id asc.
+    filtered.sort((a,b)=>{
+      const sa=a.score!=null?a.score:-Infinity,sb=b.score!=null?b.score:-Infinity;
+      if(sb!==sa)return sb-sa;
+      if(a.name!==b.name)return a.name<b.name?-1:1;
+      return a.id-b.id;
+    });
+    return filtered;
+  }
+  // No Game Detail "open" function is reusable across sections without a
+  // router rewrite (audited — every renderDetail()/gd-* is section-local, see
+  // report), so per doc section 五's fallback this only offers name + source
+  // link + Add-to-Watchlist, reusing the existing global wlAdd/wlShowAddModal
+  // (see report section 十一).
+  function fillDriverPanel(panelEl,entityType,entityName,month,pt){
+    const games=driverGames(entityType,entityName,month);
+    if(games.length!==pt.count){
+      console.error('[Phase 5A.7] drilldown count mismatch',entityType,entityName,month,games.length,pt.count);
+    }
+    panelEl.innerHTML='';
+    const hdr=mk('div','');
+    hdr.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px';
+    hdr.innerHTML=`<div style="font-size:13px;font-weight:700">${month} · ${entityName}${monthStatusBadge(month)}</div><div style="font-size:12px;color:var(--txd)">共 ${games.length} 款</div>`;
+    panelEl.appendChild(hdr);
+    if(entityType!=='provider'&&pt.reliability==='low'){
+      const warn=mk('div','');warn.style.cssText='font-size:12px;color:var(--rd);margin-bottom:8px';
+      warn.textContent=`Coverage ${pt.coverage!=null?pt.coverage.toFixed(0)+'%':'N/A'}，清單僅代表目前有標記資料的遊戲。`;
+      panelEl.appendChild(warn);
+    }
+    if(!games.length){
+      const empty=mk('div','');empty.style.cssText='font-size:12px;color:var(--txd);padding:10px 0';
+      empty.textContent='本月無符合遊戲';
+      panelEl.appendChild(empty);
+      return;
+    }
+    const list=mk('div','');list.style.cssText='max-height:220px;overflow-y:auto';
+    games.forEach(g=>{
+      const row=mk('div','');
+      row.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12px';
+      const url=bestSourceUrl(g);
+      const left=mk('span','',`${url?`<a href="${url}" target="_blank" rel="noopener" style="color:inherit">${g.name}</a>`:g.name} <span style="color:var(--txd)">· ${g.provider_normalized||g.provider_raw||'Unknown'} · ${month}</span>`);
+      const right=mk('span','');right.style.cssText='display:flex;align-items:center;gap:8px;white-space:nowrap';
+      const scoreSpan=mk('span','');scoreSpan.style.color='var(--txd)';scoreSpan.textContent=g.score!=null?Number(g.score).toFixed(1):'—';
+      right.appendChild(scoreSpan);
+      const addBtn=mk('button','wl-add'+(wlHas(g.name)?' added':''));
+      addBtn.style.cssText='font-size:10px;padding:2px 6px';
+      addBtn.textContent=wlHas(g.name)?'✓ 已加入':'加入研究';
+      addBtn.onclick=()=>{
+        if(wlHas(g.name)){wlRemove(g.name);addBtn.textContent='加入研究';addBtn.classList.remove('added');}
+        else wlShowAddModal(g,ok=>{if(ok){addBtn.textContent='✓ 已加入';addBtn.classList.add('added');}},{added_reason:`Trend Drilldown：${entityName}（${month}）`,research_goal:['競品分析']});
+      };
+      right.appendChild(addBtn);
+      row.append(left,right);
+      list.appendChild(row);
+    });
+    panelEl.appendChild(list);
+  }
   function showTrendModal(entityType,entityName,endMonth){
     const series=computeTrendSeries(entityType,entityName,endMonth);
     const ov=mk('div','wl-modal-overlay');
@@ -6245,7 +6321,7 @@ function formatMechanicsForPrompt(game){
     if(entityType==='provider'){
       tableHtml='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--bd)"><th style="text-align:left;padding:4px 6px">月份</th><th style="text-align:right;padding:4px 6px">發行數</th><th style="text-align:right;padding:4px 6px">當月總發行</th><th style="text-align:right;padding:4px 6px">Share</th><th style="text-align:right;padding:4px 6px">平均分</th></tr></thead><tbody>';
       series.forEach(pt=>{
-        tableHtml+=`<tr style="border-bottom:1px solid var(--bd)"><td style="padding:4px 6px">${pt.month}</td><td style="text-align:right;padding:4px 6px">${pt.count}</td><td style="text-align:right;padding:4px 6px;color:var(--txd)">${pt.total}</td><td style="text-align:right;padding:4px 6px">${pt.share!=null?pt.share.toFixed(1)+'%':'—'}</td><td style="text-align:right;padding:4px 6px">${pt.avgScore!=null?pt.avgScore.toFixed(1):'—'}</td></tr>`;
+        tableHtml+=`<tr data-month="${pt.month}" style="border-bottom:1px solid var(--bd);cursor:pointer" title="點擊查看本月遊戲"><td style="padding:4px 6px">${pt.month}</td><td style="text-align:right;padding:4px 6px">${pt.count}</td><td style="text-align:right;padding:4px 6px;color:var(--txd)">${pt.total}</td><td style="text-align:right;padding:4px 6px">${pt.share!=null?pt.share.toFixed(1)+'%':'—'}</td><td style="text-align:right;padding:4px 6px">${pt.avgScore!=null?pt.avgScore.toFixed(1):'—'}</td></tr>`;
       });
       tableHtml+='</tbody></table>';
     } else {
@@ -6253,7 +6329,7 @@ function formatMechanicsForPrompt(game){
       series.forEach(pt=>{
         const relColor=pt.reliability?REL_COLOR[pt.reliability]:'var(--txd)';
         const relLabel=pt.reliability?REL_LABEL[pt.reliability]:'—';
-        tableHtml+=`<tr style="border-bottom:1px solid var(--bd)"><td style="padding:4px 6px">${pt.month}</td><td style="text-align:right;padding:4px 6px">${pt.count}</td><td style="text-align:right;padding:4px 6px;color:var(--txd)">${pt.denom}</td><td style="text-align:right;padding:4px 6px">${pt.penetration!=null?pt.penetration.toFixed(1)+'%':'N/A'}</td><td style="text-align:right;padding:4px 6px">${pt.coverage!=null?pt.coverage.toFixed(0)+'%':'N/A'}</td><td style="text-align:center;padding:4px 6px;color:${relColor}">${relLabel}</td></tr>`;
+        tableHtml+=`<tr data-month="${pt.month}" style="border-bottom:1px solid var(--bd);cursor:pointer" title="點擊查看本月遊戲"><td style="padding:4px 6px">${pt.month}</td><td style="text-align:right;padding:4px 6px">${pt.count}</td><td style="text-align:right;padding:4px 6px;color:var(--txd)">${pt.denom}</td><td style="text-align:right;padding:4px 6px">${pt.penetration!=null?pt.penetration.toFixed(1)+'%':'N/A'}</td><td style="text-align:right;padding:4px 6px">${pt.coverage!=null?pt.coverage.toFixed(0)+'%':'N/A'}</td><td style="text-align:center;padding:4px 6px;color:${relColor}">${relLabel}</td></tr>`;
       });
       tableHtml+='</tbody></table>';
     }
@@ -6262,13 +6338,39 @@ function formatMechanicsForPrompt(game){
       <div class="wl-modal-title">${entityName}（${typeLabel}）— 過去 12 個月<br><span style="font-size:11px;color:var(--txd);font-weight:400">${windowLabel}</span></div>
       <div style="font-size:11px;color:var(--txd);margin-bottom:10px">${entityType==='provider'?'主圖為每月發行數；':'主圖為 Penetration %（非 raw count）；'}未使用 Snapshot 歷史資料，僅基於「遊戲發行月份」統計。缺乏當月資料時圖表以 0 呈現，實際數值請見下方表格的 N/A 標示。此為原始 12 個月數據，不代表任何「持續成長／短期波動」的判定，請自行研判。</div>
       <div id="trend-chart-holder" style="margin-bottom:10px"></div>
+      <div style="font-size:11px;color:var(--txd);margin-bottom:6px">點擊表格列查看該月實際遊戲清單</div>
       <div style="max-height:260px;overflow-y:auto">${tableHtml}</div>
+      <div id="trend-driver-panel" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--bd)"></div>
       <div style="display:flex;margin-top:14px">
         <button id="trend-close" style="flex:1;padding:8px;background:none;border:1px solid var(--bd);color:var(--txd);font-family:inherit;font-size:13px;cursor:pointer">關閉</button>
       </div>`;
     modal.querySelector('#trend-chart-holder').appendChild(
       lineChart([{color:'var(--am)',values:chartValues}],monthsArr,{h:160})
     );
+    // Phase 5A.7: row click toggles the Driver Games panel for that month,
+    // reusing the same modal (no modal-on-modal, no new page).
+    const driverPanel=modal.querySelector('#trend-driver-panel');
+    let activeDriverMonth=null;
+    function highlightDriverRow(month){
+      modal.querySelectorAll('tbody tr[data-month]').forEach(tr=>{
+        tr.style.background=(month&&tr.dataset.month===month)?'var(--sfh)':'';
+      });
+    }
+    modal.querySelector('table tbody').addEventListener('click',e=>{
+      const tr=e.target.closest('tr[data-month]');
+      if(!tr)return;
+      const month=tr.dataset.month;
+      if(activeDriverMonth===month){
+        driverPanel.style.display='none';driverPanel.innerHTML='';
+        activeDriverMonth=null;highlightDriverRow(null);
+        return;
+      }
+      activeDriverMonth=month;
+      const pt=series.find(p=>p.month===month);
+      fillDriverPanel(driverPanel,entityType,entityName,month,pt);
+      driverPanel.style.display='block';
+      highlightDriverRow(month);
+    });
     modal.querySelector('#trend-close').onclick=()=>ov.remove();
     ov.appendChild(modal);document.body.appendChild(ov);
     ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
