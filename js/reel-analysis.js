@@ -85,7 +85,7 @@
 
   // ── Header ──────────────────────────────────────────────────────────────
   const header=mk('div','sh');
-  header.innerHTML=`<div class="st">盤面尺寸 / Layout Analysis</div><div class="ss">依「Reels × Rows」統計盤面尺寸；Megaways / xWays / Reelset Changing 等變動盤面機制另計為 Variable Grid，不會被強制套用一個固定尺寸。</div>`;
+  header.innerHTML=`<div class="st">盤面尺寸分析</div><div class="ss">依「Reels × Rows」統計盤面尺寸（Layout Analysis）；Megaways / xWays / Reelset Changing 等變動盤面機制另計為 Variable Grid，不會被強制套用一個固定尺寸。</div>`;
   s.appendChild(header);
 
   const summary=mk('div','card');

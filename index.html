@@ -21,16 +21,16 @@
 
 <aside id="sidebar">
   <button class="ni" data-s="guide" style="color:var(--am);font-weight:700;border-bottom:1px solid var(--bd);margin-bottom:4px;padding-bottom:10px">使用教學</button>
-  <button class="ni" data-s="games" id="nav-gsearch" style="font-weight:700">遊戲查詢</button>
   <div class="nl">分析</div>
   <button class="ni on" data-s="overview">總覽</button>
+  <button class="ni" data-s="games" id="nav-gsearch" style="font-weight:700">遊戲查詢</button>
   <button class="ni" data-s="provider">遊戲商策略</button>
   <button class="ni" data-s="year">年份趨勢</button>
   <button class="ni" data-s="mechanic">玩法機制地圖</button>
   <button class="ni" data-s="anatomy">評分來源解剖</button>
   <button class="ni" data-s="reel">盤面尺寸分析</button>
   <div class="nl">資料</div>
-  <button class="ni" data-s="games">遊戲瀏覽</button>
+  <button class="ni" data-s="games">遊戲探索</button>
   <button class="ni" data-s="ecosystem">生態系分析</button>
   <button class="ni" data-s="datalab">資料實驗室</button>
   <div class="nl">進階分析</div>
@@ -793,13 +793,24 @@ function wlRadarAdd(provName,priority){
   modal.innerHTML=html;
   const gDiv=modal.querySelector('#brm-games');
   recent.forEach(g=>{
-    const lbl=document.createElement('label');lbl.className='wl-goal-check';lbl.style.justifyContent='space-between';
+    const lbl=document.createElement('label');lbl.className='wl-goal-check';lbl.style.cssText='justify-content:space-between;flex:1;min-width:0';
     const cb=document.createElement('input');cb.type='checkbox';cb.checked=!wlHas(g.name);
     if(wlHas(g.name)){cb.checked=false;cb.disabled=true;}
     cb.onchange=()=>{if(cb.checked)sel.add(g.name);else sel.delete(g.name);};
     const info=mk('span','');info.style.fontSize='12px';
     info.textContent=`${g.name} · ${g.year||'?'} · ${g.score!=null?Number(g.score).toFixed(1):'—'}${wlHas(g.name)?' ✓（已加入）':''}`;
-    lbl.append(cb,info);gDiv.appendChild(lbl);
+    lbl.append(cb,info);
+    // Phase 6C: SI comes from D.series_index/D.games, so g.id is always
+    // present — no legacy-data guard needed. Kept as a sibling of the
+    // <label> (not nested) so clicking it doesn't also toggle the checkbox.
+    const row=mk('div','');row.style.cssText='display:flex;align-items:center;gap:6px';
+    row.appendChild(lbl);
+    if(g.id!=null){
+      const detBtn=mk('button','gc-btn');detBtn.style.cssText='font-size:10px;padding:2px 6px;flex-shrink:0';detBtn.textContent='詳情';
+      detBtn.onclick=(e)=>{e.preventDefault();e.stopPropagation();window.openGameDetail(g.id);};
+      row.appendChild(detBtn);
+    }
+    gDiv.appendChild(row);
     if(!wlHas(g.name))sel.add(g.name);else sel.delete(g.name);
   });
   const prioDiv=modal.querySelector('#brm-prio');
@@ -5124,7 +5135,11 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
       const item=mk('div','sr-tl-item sr-tl-'+c);
       const yr=mk('div','sr-tl-year');yr.textContent=g.year||'?';item.appendChild(yr);
       const nm=mk('div','sr-tl-name');
-      nm.innerHTML=isCore?'<b style="color:var(--gn)">★ '+g.name+'</b>':g.name;item.appendChild(nm);
+      // Phase 6C: series members always come from D.series_index/D.games, so
+      // g.id is guaranteed present here (used in the isCore comparison right
+      // above) — no legacy-data guard needed, unlike Watchlist.
+      const nameHtml=g.id!=null?`<span style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px" onclick="window.openGameDetail(${g.id})" title="查看 Game Detail">${g.name}</span>`:g.name;
+      nm.innerHTML=isCore?'<b style="color:var(--gn)">★ '+nameHtml+'</b>':nameHtml;item.appendChild(nm);
       const tagRow=mk('div','');tagRow.style.cssText='display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:3px 0';
       const clsBadge=mk('span','sr-cls-badge');clsBadge.style.cssText='background:'+cc+'22;color:'+cc+';border:1px solid '+cc+'44;font-size:10px';clsBadge.title=CLS_DESC[c];clsBadge.textContent=CLS_LABEL[c];
       tagRow.appendChild(clsBadge);
@@ -5157,7 +5172,7 @@ ${bwbMissing?`<div class="sa-detail-bwb-missing">尚無 BWB 交叉驗證，不�
       const rvColor=rv==='高'?'var(--gn)':rv==='中'?'var(--am)':'var(--txd)';
       const card=mk('div','sr-cmp-card');
       const cmpHdr=mk('div','');cmpHdr.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px';
-      const cmpName=mk('span','');cmpName.style.cssText='font-size:14px;font-weight:700;color:var(--tx)';cmpName.textContent=g.name;
+      const cmpName=mk('span','');cmpName.style.cssText='font-size:14px;font-weight:700;color:var(--tx);cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px';cmpName.textContent=g.name;cmpName.title='查看 Game Detail';cmpName.onclick=()=>window.openGameDetail(g.id);
       const cmpBadge=mk('span','sr-cls-badge');cmpBadge.style.cssText='background:'+cc+'22;color:'+cc+';border:1px solid '+cc+'44;font-size:11px';cmpBadge.title=CLS_DESC[c];cmpBadge.textContent=CLS_LABEL[c];
       const cmpRv=mk('span','');cmpRv.style.cssText='font-size:11px;font-weight:700;color:'+rvColor;cmpRv.textContent='研究價值：'+rv;
       if(g.isManual){const mb=mk('span','sr-manual-badge');mb.textContent='人工校正';cmpHdr.appendChild(mb);}
@@ -5817,7 +5832,17 @@ function formatMechanicsForPrompt(game){
     cpBtn.style.cssText='font-size:12px;padding:4px 10px';
     cpBtn.textContent='複製競品分析 Prompt';
     cpBtn.onclick=()=>copyPrompt(game,matched,missed,mt.label,risk.label,noteText);
-    acts.append(addBtn,cpBtn);card.appendChild(acts);
+    acts.append(addBtn,cpBtn);
+    // Phase 6C: GAMES comes from D.series_index/D.games, so game.id is
+    // always present here — no legacy-data guard needed.
+    if(game.id!=null){
+      const detBtn=mk('button','gc-btn');
+      detBtn.style.cssText='font-size:12px;padding:4px 10px';
+      detBtn.textContent='詳情';
+      detBtn.onclick=()=>window.openGameDetail(game.id);
+      acts.appendChild(detBtn);
+    }
+    card.appendChild(acts);
 
     return card;
   }
@@ -6798,6 +6823,14 @@ function formatMechanicsForPrompt(game){
     const rmBtn=mk('button','');rmBtn.style.cssText='padding:4px 10px;background:none;border:1px solid var(--rd);color:var(--rd);font-family:inherit;font-size:11px;cursor:pointer';rmBtn.textContent='移除';
     rmBtn.onclick=()=>{if(confirm(`移除「${g.name}」？`)){wlRemove(g.name);renderTab();}};
     editRow.append(statSel,editBtn,deepBtn,rmBtn);
+    // Phase 6C: legacy items added before `id` existed on every WL entry
+    // (or added via some other path that dropped it) skip this button
+    // entirely rather than guessing/fuzzy-matching a game — per phase scope.
+    if(g.id!=null){
+      const detBtn=mk('button','');detBtn.style.cssText='padding:4px 10px;background:none;border:1px solid var(--bd);color:var(--txd);font-family:inherit;font-size:11px;cursor:pointer';detBtn.textContent='詳情';
+      detBtn.onclick=()=>window.openGameDetail(g.id);
+      editRow.appendChild(detBtn);
+    }
     const cur2=wlGet(g.name)||g;
     const urlRow=mk('div','');urlRow.style.cssText='display:flex;gap:6px;margin-top:4px;flex-wrap:wrap';
     if(cur2.source_url){const a=mk('a','');a.href=cur2.source_url;a.target='_blank';a.style.cssText='padding:4px 10px;border:1px solid var(--bl);color:var(--bl);font-size:11px;text-decoration:none;cursor:pointer;font-family:inherit';a.textContent='Source';urlRow.appendChild(a);}
