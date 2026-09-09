@@ -132,14 +132,22 @@ function buildGameDetailBody(g){
   ].filter(Boolean);
   const srcSectionHtml=srcLinks.length?`<div class="gd-drawer-section"><div class="gd-drawer-label">資料來源</div>
       <div class="gd-drawer-val" style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">${srcLinks.map(s=>`<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="gc-btn" style="font-size:11px;text-decoration:none">${s.label}</a>`).join('')}</div></div>`:'';
+  // Phase 7B.2: order is now 基礎資料/評分來源/資料來源/研究圖片/生態系/
+  // 全部機制/全部主題/操作 — 研究圖片 moved ahead of Mechanics/Themes (a
+  // 20+ item list) since it's meant to be the fast high-value glance, not
+  // something buried below a long scroll (see report section 三). It's a
+  // real grid item now (grid-column:1/-1, spans the full row) rather than a
+  // bolted-on block after the grid, so it picks up the same gap spacing as
+  // every other section with no extra border/margin hack.
   return `<div class="gd-drawer-grid">
     <div class="gd-drawer-section"><div class="gd-drawer-label">基礎資料</div>
       <div class="gd-drawer-val">RTP：${g.rtp||'—'}<br>最高倍率：${g.max_win?g.max_win+'x':'—'}<br>輪軸：${g.reels||'—'}<br>波動：${g.volatility||'—'}<br>命中率：${g.hit_freq_pct!=null?g.hit_freq_pct.toFixed(1)+'%':'—'}</div></div>
     <div class="gd-drawer-section"><div class="gd-drawer-label">評分來源</div>
       <div class="gd-drawer-val"><span style="color:var(--txd);font-size:10px">CGN 數值吸引力</span><br>${g.cgscore!=null?g.cgscore.toFixed(0):'—'}<br><span style="color:var(--txd);font-size:10px">SlotCatalog 玩家評分</span><br>${fmtSrc(g.sc_rating)}<br><span style="color:var(--txd);font-size:10px">BWB 評價</span><br>${fmtSrc(g.bwb_rating)}</div></div>
+    ${srcSectionHtml}
+    <div class="gd-drawer-section" id="gdm-media-section" style="display:none;grid-column:1/-1"></div>
     <div class="gd-drawer-section"><div class="gd-drawer-label">生態系</div>
       <div class="gd-drawer-val">${g.ecosystem||'—'}<br><span style="font-size:10px;color:var(--txd)">${g.ecosystem_confidence||''}</span></div></div>
-    ${srcSectionHtml}
     <div class="gd-drawer-section"><div class="gd-drawer-label">全部機制（${(g.mechanics||[]).length}）</div>
       <div class="gd-drawer-val">${(g.mechanics||[]).map(m=>`<span class="tag tm" style="font-size:11px;margin:1px">${m}</span>`).join('')||'—'}</div></div>
     <div class="gd-drawer-section"><div class="gd-drawer-label">全部主題（${(g.themes||[]).length}）</div>
@@ -153,8 +161,7 @@ function buildGameDetailBody(g){
           ?'<div style="font-size:10px;color:var(--txd)">分享連結僅支援已部署的網頁版（GitHub Pages）</div>'
           :'<button class="gc-btn" id="gdm-cp-link" style="font-size:11px">複製遊戲連結</button>'}
       </div></div>
-  </div>
-  <div id="gdm-media-section" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--bd)"></div>`;
+  </div>`;
 }
 // Phase 7B: research media (screenshots) — on-demand only, never part of
 // D.games/data.js. See GAME_MEDIA_ARCHITECTURE.md for the full design.
@@ -260,8 +267,11 @@ window.openGameDetail=function(gameId){
   if(!g){toast('找不到這款遊戲資料',false);return;}
   setGameUrlParam(g.id);
   const ov=mk('div','wl-modal-overlay');
-  const modal=mk('div','wl-modal');
-  modal.style.width='620px';
+  // Phase 7B.2: .wl-modal is shared by Watchlist add/edit, Radar batch-add,
+  // and Trend Explorer (each already overrides its own width inline — see
+  // report section 一's audit) — a dedicated .game-detail-modal modifier
+  // class means resizing Game Detail can never accidentally resize those.
+  const modal=mk('div','wl-modal game-detail-modal');
   const metaLine=`${g.provider_normalized||g.provider||'?'} · ${g.year||'?'} · 分數 ${g.score!=null?Number(g.score).toFixed(1):'N/A'}`;
   modal.innerHTML=`
     <div class="wl-modal-title">${g.name}<br><span style="font-size:11px;color:var(--txd);font-weight:400">${metaLine}</span></div>

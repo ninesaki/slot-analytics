@@ -552,6 +552,13 @@ tbody td:first-child{color:var(--tx);font-weight:500}
 /* Research Workbench & upgraded Watchlist */
 .wl-modal-overlay{position:fixed;inset:0;z-index:800;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px}
 .wl-modal{background:var(--sf);border:1px solid var(--bd);padding:20px;width:480px;max-width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.7)}
+/* Phase 7B.2: Game Detail-only modifier — .wl-modal is shared by several
+   other modals (Watchlist add/edit, Radar batch-add, Trend Explorer), each
+   already overriding width inline for its own needs; this is a dedicated
+   class so Game Detail's resize can never leak into those. min(1000px,92vw)
+   already covers narrow viewports (shrinks below the 1000px cap with no
+   separate media query needed) without ever forcing a horizontal scrollbar. */
+.game-detail-modal{width:min(1000px,92vw);max-width:1000px;max-height:85vh}
 .wl-modal-title{font-size:14px;font-weight:700;color:var(--tx);margin-bottom:12px;border-bottom:1px solid var(--bd);padding-bottom:8px}
 .wl-modal-label{font-size:13px;font-weight:700;color:var(--txd);text-transform:uppercase;letter-spacing:.05em;margin-top:12px;margin-bottom:4px;display:block}
 .wl-modal-input{width:100%;background:var(--bg);border:1px solid var(--bd);color:var(--tx);padding:6px 10px;font-family:inherit;font-size:13px;box-sizing:border-box}
